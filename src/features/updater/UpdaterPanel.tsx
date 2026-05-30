@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { updateManifest } from './updateManifest';
 import {
   checkForDesktopUpdate,
@@ -36,23 +36,35 @@ function formatUpdaterStatus(status: DesktopUpdaterStatus, updateInfo: DesktopUp
 }
 
 export function UpdaterPanel() {
-  const [status, setStatus] = useState<DesktopUpdaterStatus>('not-available');
+  const [status, setStatus] = useState<DesktopUpdaterStatus>('checking');
   const [updateInfo, setUpdateInfo] = useState<DesktopUpdateInfo | null>(null);
-  const [progressText, setProgressText] = useState('');
+  const [progressText, setProgressText] = useState('Auto-checking on startup...');
+  const hasAutoChecked = useRef(false);
 
-  async function handleCheckForUpdate() {
+  const checkForUpdate = useCallback(async (source: 'auto' | 'manual') => {
     setStatus('checking');
-    setProgressText('');
+    setProgressText(source === 'auto' ? 'Auto-checking on startup...' : '');
 
     try {
       const update = await checkForDesktopUpdate();
       setUpdateInfo(update);
       setStatus(update ? 'available' : 'not-available');
+      setProgressText(update ? 'Desktop update found.' : 'You are running the latest desktop version.');
     } catch (error) {
       console.error('[Kodiak Connect] Updater check failed', error);
       setStatus('error');
+      setProgressText('Automatic update check failed. Manual retry is available.');
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (hasAutoChecked.current) {
+      return;
+    }
+
+    hasAutoChecked.current = true;
+    void checkForUpdate('auto');
+  }, [checkForUpdate]);
 
   async function handleInstallUpdate() {
     setStatus('installing');
@@ -98,8 +110,8 @@ export function UpdaterPanel() {
         <p>{formatUpdaterStatus(status, updateInfo)}</p>
         {progressText ? <p className="muted-text">{progressText}</p> : null}
         <div className="button-row">
-          <button type="button" onClick={handleCheckForUpdate} disabled={status === 'checking' || status === 'installing'}>
-            Check for update
+          <button type="button" onClick={() => void checkForUpdate('manual')} disabled={status === 'checking' || status === 'installing'}>
+            Check again
           </button>
           <button type="button" onClick={handleInstallUpdate} disabled={status !== 'available'}>
             Install update
