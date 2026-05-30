@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Kodiak Connect",
+  "version": "0.1.0",
+  "identifier": "com.kodiakholdings.kodiakconnect",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Kodiak Connect",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 360,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "deb"],
+    "publisher": "Kodiak Holdings LLC",
+    "shortDescription": "Secure Matrix chat client",
+    "longDescription": "Kodiak Connect is a secure Discord-like Matrix chat client for web, Android, Windows, and Linux.",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://kodiak-connect.com/releases/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "dialog": true,
+      "pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY"
+    }
+  }
+}
