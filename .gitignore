@@ -50,6 +50,7 @@ src-tauri/.cargo/config.toml
 release/
 artifacts/
 *.msi
+*.sig
 *.exe
 *.deb
 *.AppImage
