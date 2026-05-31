@@ -273,3 +273,49 @@
     padding-bottom: 1rem !important;
   }
 }
+
+/* Mobile top-card support/social dock */
+.launcher-mobile-social-dock {
+  display: none;
+}
+
+@media (max-width: 850px) {
+  .launcher-card {
+    position: relative;
+  }
+
+  .launcher-mobile-social-dock {
+    position: absolute;
+    top: 1.15rem;
+    right: 1.15rem;
+    z-index: 20;
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.42rem;
+    white-space: nowrap;
+  }
+
+  .launcher-mobile-social-dock .launcher-social-link {
+    width: 2.05rem !important;
+    height: 2.05rem !important;
+    flex: 0 0 2.05rem !important;
+    font-size: 0.8rem !important;
+    background: rgba(7, 11, 20, 0.72);
+    backdrop-filter: blur(10px);
+  }
+
+  .launcher-card__intro {
+    padding-right: 9.75rem;
+  }
+
+  .updater-social-dock {
+    display: none !important;
+  }
+
+  .launcher-shell .kodiak-status-card {
+    padding-bottom: 1rem !important;
+  }
+}
