@@ -21,15 +21,17 @@ export function KodiakStatusCard({
   tone = 'ready',
   children,
 }: KodiakStatusCardProps) {
+  const titleId = `${title.replace(/\s+/g, '-').toLowerCase()}-title`;
+
   return (
-    <section className={`kodiak-status-card kodiak-status-card--${tone}`} aria-labelledby={`${title.replace(/\s+/g, '-').toLowerCase()}-title`}>
+    <section className={`kodiak-status-card kodiak-status-card--${tone}`} aria-labelledby={titleId}>
       <div className="kodiak-status-card__header">
         <div className="brand-orb" aria-hidden="true">
-          🐻
+          <img src="/kodiak-connect-icon.png" alt="" />
         </div>
         <div>
           <p className="eyebrow eyebrow--ember">{eyebrow}</p>
-          <h2 id={`${title.replace(/\s+/g, '-').toLowerCase()}-title`}>{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           {description ? <p className="kodiak-status-card__description">{description}</p> : null}
         </div>
         {badgeText ? <span className="kodiak-badge">{badgeText}</span> : null}
