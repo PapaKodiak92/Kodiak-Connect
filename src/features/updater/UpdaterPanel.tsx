@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { KodiakStatusCard } from '../../components/ui/KodiakStatusCard';
 import { updateManifest } from './updateManifest';
 import {
   checkForDesktopUpdate,
@@ -9,30 +10,46 @@ import {
 
 function formatUpdaterStatus(status: DesktopUpdaterStatus, updateInfo: DesktopUpdateInfo | null) {
   if (status === 'checking') {
-    return 'Checking for updates...';
+    return 'Checking secure release channel...';
   }
 
   if (status === 'available' && updateInfo) {
-    return `Update available: ${updateInfo.currentVersion} -> ${updateInfo.version}`;
+    return `Update ready: ${updateInfo.currentVersion} → ${updateInfo.version}`;
   }
 
   if (status === 'not-available') {
-    return 'No desktop update is available.';
+    return 'Kodiak Connect is up to date.';
   }
 
   if (status === 'installing') {
-    return 'Installing update...';
+    return 'Preparing trusted update...';
   }
 
   if (status === 'installed') {
-    return 'Update installed. Restart the app to finish.';
+    return 'Update installed. Restart to enter the newest build.';
   }
 
   if (status === 'error') {
-    return 'Updater check failed. See console logs.';
+    return 'Update check failed.';
   }
 
-  return 'Ready to check hosted desktop updates.';
+  return 'Ready to check for secure desktop updates.';
+}
+
+function getStatusTone(status: DesktopUpdaterStatus) {
+  if (status === 'available') {
+    return 'available';
+  }
+
+  if (status === 'checking' || status === 'installing') {
+    return 'working';
+  }
+
+  if (status === 'error') {
+    return 'error';
+  }
+
+  return 'ready';
 }
 
 export function UpdaterPanel() {
@@ -43,17 +60,17 @@ export function UpdaterPanel() {
 
   const checkForUpdate = useCallback(async (source: 'auto' | 'manual') => {
     setStatus('checking');
-    setProgressText(source === 'auto' ? 'Auto-checking on startup...' : '');
+    setProgressText(source === 'auto' ? 'Auto-checking on startup...' : 'Contacting update server...');
 
     try {
       const update = await checkForDesktopUpdate();
       setUpdateInfo(update);
       setStatus(update ? 'available' : 'not-available');
-      setProgressText(update ? 'Desktop update found.' : 'You are running the latest desktop version.');
+      setProgressText(update ? 'A signed desktop update is ready to install.' : 'Latest desktop release is already installed.');
     } catch (error) {
       console.error('[Kodiak Connect] Updater check failed', error);
       setStatus('error');
-      setProgressText('Automatic update check failed. Manual retry is available.');
+      setProgressText('Could not reach or verify the update channel. Manual retry is available.');
     }
   }, []);
 
@@ -68,56 +85,53 @@ export function UpdaterPanel() {
 
   async function handleInstallUpdate() {
     setStatus('installing');
+    setProgressText('Starting secure download...');
 
     try {
       await installDesktopUpdate((progress) => {
         if (progress.event === 'Started') {
-          setProgressText('Download started.');
+          setProgressText('Download started. Keep Kodiak Connect open.');
         }
 
         if (progress.event === 'Progress' && progress.totalBytes) {
           const percent = Math.round((progress.downloadedBytes / progress.totalBytes) * 100);
-          setProgressText(`Downloaded ${percent}%`);
+          setProgressText(`Downloading signed update... ${percent}%`);
         }
 
         if (progress.event === 'Finished') {
-          setProgressText('Download finished. Installing...');
+          setProgressText('Download verified. Handing off to the system installer...');
         }
       });
 
       setStatus('installed');
+      setProgressText('Restart Kodiak Connect after the installer completes.');
     } catch (error) {
       console.error('[Kodiak Connect] Update install failed', error);
       setStatus('error');
+      setProgressText('The update could not be installed. Try again or download the installer manually.');
     }
   }
 
+  const tone = useMemo(() => getStatusTone(status), [status]);
+
   return (
-    <section className="panel" aria-labelledby="updater-title">
-      <div>
-        <p className="eyebrow">Installers first</p>
-        <h2 id="updater-title">Updater foundation v0.1.9</h2>
+    <KodiakStatusCard
+      eyebrow="Official release channel"
+      title="Kodiak updater"
+      description="Signed desktop releases for Windows and Linux. Built to keep the app current before chat features ship."
+      statusText={formatUpdaterStatus(status, updateInfo)}
+      detailText={progressText}
+      badgeText={`v${updateManifest.currentVersion}`}
+      tone={tone}
+    >
+      <div className="button-row">
+        <button type="button" onClick={() => void checkForUpdate('manual')} disabled={status === 'checking' || status === 'installing'}>
+          Check again
+        </button>
+        <button type="button" className="button-primary" onClick={handleInstallUpdate} disabled={status !== 'available'}>
+          Download & install
+        </button>
       </div>
-
-      <ul className="checklist">
-        <li>Version manifest: {updateManifest.currentVersion}</li>
-        <li>Tauri desktop updater: hosted manifest ready</li>
-        <li>Android APK release path: debug APK validated</li>
-        <li>Web deploy path: VPS-ready static build</li>
-      </ul>
-
-      <div className="updater-actions">
-        <p>{formatUpdaterStatus(status, updateInfo)}</p>
-        {progressText ? <p className="muted-text">{progressText}</p> : null}
-        <div className="button-row">
-          <button type="button" onClick={() => void checkForUpdate('manual')} disabled={status === 'checking' || status === 'installing'}>
-            Check again
-          </button>
-          <button type="button" onClick={handleInstallUpdate} disabled={status !== 'available'}>
-            Install update
-          </button>
-        </div>
-      </div>
-    </section>
+    </KodiakStatusCard>
   );
 }
