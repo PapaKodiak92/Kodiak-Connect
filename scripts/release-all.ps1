@@ -119,11 +119,13 @@ try {
   Invoke-Step "Build and publish Linux DEB on VPS" {
     $RemoteScript = @"
 set -e
+export PATH="`$HOME/.cargo/bin:`$PATH"
 cd '$VpsRepoPath'
 git fetch origin main
 git reset --hard origin/main
 npm ci
 npm run build
+cargo --version
 TAURI_SIGNING_PRIVATE_KEY='/root/.tauri/kodiak-connect-v2-release.key' npx tauri build --bundles deb
 DEB_FILE="`$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name 'Kodiak Connect_${Version}_amd64.deb' | head -n 1)"
 SIG_FILE="`$DEB_FILE.sig"
