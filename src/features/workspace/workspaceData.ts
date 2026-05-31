@@ -14,7 +14,10 @@ export const officialSpace: WorkspaceSpace = {
           id: 'announcements',
           name: 'announcements',
           kind: 'announcement',
-          description: 'Official product updates and platform notices.',
+          description: 'Major Kodiak Connect announcements, safety notices, policy updates, and launch notices.',
+          matrixAlias: '#announcements:v2.kodiak-connect.com',
+          readOnly: true,
+          allowedPosterIds: ['@papakodiak:v2.kodiak-connect.com'],
         },
         {
           id: 'dev-updates',
