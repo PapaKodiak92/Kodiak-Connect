@@ -2,10 +2,14 @@ import { useMemo, useState, type ChangeEventHandler, type FormEvent } from 'reac
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { TurnstileWidget } from '../../components/security/TurnstileWidget';
 import { kodiakEnv } from '../../config/env';
-import { MatrixLoginError, verifyMatrixLogin } from './matrixLoginService';
+import { MatrixLoginError, verifyMatrixLogin, type MatrixLoginIdentity } from './matrixLoginService';
 
 type LoginMode = 'sign-in' | 'create-account' | 'reset-password';
 type MessageTone = 'error' | 'success';
+
+interface LoginScreenProps {
+  onLoginSuccess?: (identity: MatrixLoginIdentity) => void;
+}
 
 interface FormMessage {
   tone: MessageTone;
@@ -141,7 +145,7 @@ function LoginFooter() {
 function getLoginErrorMessage(error: unknown) {
   if (error instanceof MatrixLoginError) {
     if (error.errcode === 'M_FORBIDDEN' || error.status === 403) {
-      return 'Incorrect username or password.';
+      return 'Incorrect username, email, or password.';
     }
 
     if (error.status === 429) {
@@ -154,7 +158,7 @@ function getLoginErrorMessage(error: unknown) {
   return 'Kodiak Connect could not reach the Matrix staging server.';
 }
 
-export function LoginScreen() {
+export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [mode, setMode] = useState<LoginMode>('sign-in');
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [message, setMessage] = useState<FormMessage | null>(null);
@@ -217,9 +221,10 @@ export function LoginScreen() {
     setMessage(null);
 
     try {
-      await verifyMatrixLogin(loginId, loginPassword);
+      const identity = await verifyMatrixLogin(loginId, loginPassword);
       setFailedAttempts(0);
       setSuccess('Signed in successfully. Preparing your workspace.');
+      window.setTimeout(() => onLoginSuccess?.(identity), 350);
     } catch (error) {
       const nextAttempts = failedAttempts + 1;
       setFailedAttempts(nextAttempts);
