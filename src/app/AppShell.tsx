@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { LoginScreen } from '../features/auth/LoginScreen';
+import type { MatrixLoginIdentity } from '../features/auth/matrixLoginService';
 import { AndroidUpdatePanel } from '../features/updater/AndroidUpdatePanel';
 import { UpdaterPanel } from '../features/updater/UpdaterPanel';
+import { WorkspaceShell } from '../features/workspace/WorkspaceShell';
 import { KodiakSplashScreen } from '../components/layout/KodiakSplashScreen';
 import { WindowTitleBar } from '../components/layout/WindowTitleBar';
 import { openAndroidApkDownload } from '../platform/android/androidUpdateService';
 import { usePlatformInfo } from '../platform/usePlatformInfo';
 
-type AppState = 'booting' | 'checking-update' | 'update-required' | 'login';
+type AppState = 'booting' | 'checking-update' | 'update-required' | 'login' | 'workspace';
 
 const launcherLinks = [
   {
@@ -72,6 +74,7 @@ function LauncherSocialLinks({ isMobile }: LauncherSocialLinksProps) {
 export function AppShell() {
   const platform = usePlatformInfo();
   const [appState, setAppState] = useState<AppState>('booting');
+  const [matrixIdentity, setMatrixIdentity] = useState<MatrixLoginIdentity | null>(null);
   const updaterOnline = true;
   const serverOnline = false;
   const isMobile = platform.kind === 'android';
@@ -100,6 +103,16 @@ export function AppShell() {
     setAppState('update-required');
   }, [isWebDev]);
 
+  const handleLoginSuccess = useCallback((identity: MatrixLoginIdentity) => {
+    setMatrixIdentity(identity);
+    setAppState('workspace');
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    setMatrixIdentity(null);
+    setAppState('login');
+  }, []);
+
   const updaterPanel = isMobile ? (
     <AndroidUpdatePanel onUpToDate={handleUpToDate} onUpdateRequired={handleUpdateRequired} onUpdateCheckFailed={handleUpdateCheckFailed} />
   ) : (
@@ -115,11 +128,20 @@ export function AppShell() {
     return <KodiakSplashScreen />;
   }
 
+  if (appState === 'workspace' && matrixIdentity) {
+    return (
+      <>
+        <WindowTitleBar platformKind={platform.kind} />
+        <WorkspaceShell identity={matrixIdentity} onLogout={handleLogout} />
+      </>
+    );
+  }
+
   if (appState === 'login') {
     return (
       <>
         <WindowTitleBar platformKind={platform.kind} />
-        <LoginScreen />
+        <LoginScreen onLoginSuccess={handleLoginSuccess} />
       </>
     );
   }
