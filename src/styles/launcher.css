@@ -1,0 +1,105 @@
+.window-titlebar {
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.window-titlebar__brand,
+.window-titlebar__brand span,
+.window-titlebar__brand img {
+  cursor: grab;
+}
+
+.app-shell--framed {
+  width: min(1160px, calc(100vw - 1rem));
+  min-height: calc(100vh - 42px);
+  padding: calc(42px + 0.5rem) 0 0.5rem;
+}
+
+.app-shell--compact .app-frame {
+  min-height: calc(100vh - 42px - 1rem);
+  overflow: hidden;
+}
+
+.app-shell--compact .app-frame__header {
+  padding: 0.85rem 1rem;
+}
+
+.app-shell--compact .app-frame__header h2 {
+  font-size: 1.15rem;
+}
+
+.app-shell--compact .app-frame__body {
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.launcher-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  gap: 0.85rem;
+  align-items: stretch;
+}
+
+.launcher-summary {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  padding: 1.2rem;
+}
+
+.launcher-summary h1 {
+  max-width: none;
+  margin: 0;
+  font-size: clamp(2rem, 4.8vw, 3.4rem);
+  line-height: 0.98;
+}
+
+.launcher-summary .lede {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.launcher-status-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.launcher-status-grid div {
+  padding: 0.72rem 0.8rem;
+}
+
+.app-shell--compact .kodiak-status-card {
+  min-height: 100%;
+  padding: 1rem;
+}
+
+.app-shell--compact .kodiak-status-card__header {
+  gap: 0.75rem;
+}
+
+.app-shell--compact .kodiak-status-card__description {
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.app-shell--compact .kodiak-status-card__status {
+  padding: 0.82rem;
+}
+
+.app-shell--compact .kodiak-status-card__actions {
+  padding-top: 0.8rem;
+}
+
+@media (max-width: 900px) {
+  .app-shell--compact .app-frame {
+    overflow: auto;
+  }
+
+  .launcher-grid {
+    grid-template-columns: 1fr;
+  }
+}
