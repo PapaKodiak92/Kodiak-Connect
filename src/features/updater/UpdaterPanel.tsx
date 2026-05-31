@@ -52,6 +52,28 @@ function getStatusTone(status: DesktopUpdaterStatus) {
   return 'ready';
 }
 
+function SocialLinks() {
+  return (
+    <nav className="updater-social-dock" aria-label="Kodiak Connect support and social links">
+      <a className="launcher-social-link" href="mailto:support@kodiak-connect.com?subject=Kodiak%20Connect%20Support" title="Email support" aria-label="Email support">
+        <span aria-hidden="true">@</span>
+      </a>
+      <a className="launcher-social-link" href="https://www.facebook.com/PapaKodiak/" target="_blank" rel="noreferrer" title="Facebook" aria-label="Facebook">
+        <span aria-hidden="true">f</span>
+      </a>
+      <a className="launcher-social-link" href="https://x.com/PapaKodiak92" target="_blank" rel="noreferrer" title="X" aria-label="X">
+        <span aria-hidden="true">X</span>
+      </a>
+      <a className="launcher-social-link" href="https://www.instagram.com/papakodiak92/" target="_blank" rel="noreferrer" title="Instagram" aria-label="Instagram">
+        <span aria-hidden="true">◎</span>
+      </a>
+      <a className="launcher-social-link" href="https://buymeacoffee.com/papakodiak" target="_blank" rel="noreferrer" title="Buy me a coffee" aria-label="Buy me a coffee">
+        <span aria-hidden="true">☕</span>
+      </a>
+    </nav>
+  );
+}
+
 export function UpdaterPanel() {
   const [status, setStatus] = useState<DesktopUpdaterStatus>('checking');
   const [updateInfo, setUpdateInfo] = useState<DesktopUpdateInfo | null>(null);
@@ -125,13 +147,16 @@ export function UpdaterPanel() {
       tone={tone}
       showIcon={false}
     >
-      <div className="button-row">
-        <button type="button" onClick={() => void checkForUpdate('manual')} disabled={status === 'checking' || status === 'installing'}>
-          Check again
-        </button>
-        <button type="button" className="button-primary" onClick={handleInstallUpdate} disabled={status !== 'available'}>
-          Download & install
-        </button>
+      <div className="updater-footer-row">
+        <div className="button-row">
+          <button type="button" onClick={() => void checkForUpdate('manual')} disabled={status === 'checking' || status === 'installing'}>
+            Check again
+          </button>
+          <button type="button" className="button-primary" onClick={handleInstallUpdate} disabled={status !== 'available'}>
+            Download & install
+          </button>
+        </div>
+        <SocialLinks />
       </div>
     </KodiakStatusCard>
   );
