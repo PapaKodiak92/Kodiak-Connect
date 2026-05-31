@@ -112,6 +112,7 @@ try {
   $RemoteWindowsDir = "$RemoteRoot/$Version/windows"
   $RemoteLinuxDir = "$RemoteRoot/$Version/linux"
   $RemoteAndroidDir = "$RemoteRoot/$Version/android"
+  $RemoteAndroidLatestDir = "$RemoteRoot/android"
   $RemoteWindowsMsi = "kodiak-connect_${Version}_x64_en-US.msi"
   $RemoteLinuxDeb = "kodiak-connect_${Version}_amd64.deb"
   $RemoteAndroidApk = "kodiak-connect_${Version}_android-debug.apk"
@@ -169,7 +170,7 @@ test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig'
 
   Invoke-Step "Upload Windows and Android artifacts to VPS" {
     Invoke-NativeChecked -ErrorMessage 'Failed to create remote Windows/Android release folders' -Command {
-      ssh $VpsHost "mkdir -p '$RemoteWindowsDir' '$RemoteAndroidDir'"
+      ssh $VpsHost "mkdir -p '$RemoteWindowsDir' '$RemoteAndroidDir' '$RemoteAndroidLatestDir'"
     }
     Invoke-NativeChecked -ErrorMessage 'Failed to upload Windows MSI' -Command {
       scp $WindowsMsi "${VpsHost}:$RemoteWindowsDir/$RemoteWindowsMsi"
@@ -188,7 +189,7 @@ test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig'
     }
   }
 
-  Invoke-Step "Generate and upload release manifest" {
+  Invoke-Step "Generate and upload release manifests" {
     $WindowsSignature = (Get-Content -Path $WindowsSig -Raw).Trim()
     $LinuxSignature = ((& ssh $VpsHost "cat '$RemoteLinuxDir/$RemoteLinuxDeb.sig'") -join "`n").Trim()
     if ($LASTEXITCODE -ne 0) {
@@ -199,10 +200,13 @@ test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig'
       throw 'Linux updater signature could not be read from VPS.'
     }
 
+    $PubDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $AndroidUrl = "$BaseUrl/$Version/android/$RemoteAndroidApk"
+
     $Manifest = [ordered]@{
       version = $Version
       notes = $Notes
-      pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+      pub_date = $PubDate
       platforms = [ordered]@{
         'windows-x86_64' = [ordered]@{
           signature = $WindowsSignature
@@ -215,23 +219,38 @@ test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig'
       }
     }
 
+    $AndroidManifest = [ordered]@{
+      version = $Version
+      notes = $Notes
+      pub_date = $PubDate
+      url = $AndroidUrl
+    }
+
     $ManifestJson = $Manifest | ConvertTo-Json -Depth 10
+    $AndroidManifestJson = $AndroidManifest | ConvertTo-Json -Depth 10
     $TempManifest = [System.IO.Path]::GetTempFileName()
+    $TempAndroidManifest = [System.IO.Path]::GetTempFileName()
 
     try {
       [System.IO.File]::WriteAllText($TempManifest, $ManifestJson, $Utf8NoBom)
-      Invoke-NativeChecked -ErrorMessage 'Failed to upload release manifest' -Command {
+      [System.IO.File]::WriteAllText($TempAndroidManifest, $AndroidManifestJson, $Utf8NoBom)
+      Invoke-NativeChecked -ErrorMessage 'Failed to upload desktop release manifest' -Command {
         scp $TempManifest "${VpsHost}:$RemoteRoot/manifest.json"
+      }
+      Invoke-NativeChecked -ErrorMessage 'Failed to upload Android latest manifest' -Command {
+        scp $TempAndroidManifest "${VpsHost}:$RemoteAndroidLatestDir/latest.json"
       }
     }
     finally {
       Remove-Item $TempManifest -Force -ErrorAction SilentlyContinue
+      Remove-Item $TempAndroidManifest -Force -ErrorAction SilentlyContinue
     }
   }
 
   Write-Host ""
   Write-Host "Release $Version complete across Windows, Linux, and Android." -ForegroundColor Green
   Write-Host "$BaseUrl/manifest.json" -ForegroundColor Cyan
+  Write-Host "$BaseUrl/android/latest.json" -ForegroundColor Cyan
   Write-Host "$BaseUrl/$Version/windows/$RemoteWindowsMsi" -ForegroundColor Cyan
   Write-Host "$BaseUrl/$Version/linux/$RemoteLinuxDeb" -ForegroundColor Cyan
   Write-Host "$BaseUrl/$Version/android/$RemoteAndroidApk" -ForegroundColor Cyan
