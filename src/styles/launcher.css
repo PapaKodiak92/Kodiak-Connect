@@ -13,12 +13,11 @@
 .launcher-shell {
   display: grid;
   grid-template-columns: 0.82fr 1.18fr;
-  grid-template-rows: 1fr auto;
   gap: 0.85rem;
   width: min(900px, calc(100vw - 1rem));
   min-height: calc(100vh - 42px);
   margin: 0 auto;
-  padding: calc(42px + 0.75rem) 0 0.75rem;
+  padding: calc(42px + 0.75rem) 0 4.25rem;
 }
 
 .launcher-card {
@@ -97,12 +96,19 @@
 }
 
 .launcher-footer {
-  grid-column: 1 / -1;
+  position: fixed;
+  right: 1rem;
+  bottom: 0.85rem;
+  z-index: 1200;
   display: flex;
-  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 0.45rem;
-  padding: 0 0.25rem;
+  padding: 0.45rem;
+  border: 1px solid rgba(251, 146, 60, 0.16);
+  border-radius: 999px;
+  background: rgba(7, 11, 20, 0.86);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(14px);
 }
 
 .launcher-social-link {
@@ -118,7 +124,7 @@
   font-weight: 900;
   line-height: 1;
   text-decoration: none;
-  opacity: 0.88;
+  opacity: 0.92;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
