@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KodiakStatusCard } from '../../components/ui/KodiakStatusCard';
 import { updateManifest } from './updateManifest';
 import {
@@ -28,7 +28,13 @@ function isNewerVersion(remoteVersion: string, currentVersion: string) {
   return false;
 }
 
-export function AndroidUpdatePanel() {
+interface AndroidUpdatePanelProps {
+  onUpToDate?: () => void;
+  onUpdateRequired?: () => void;
+  onUpdateCheckFailed?: () => void;
+}
+
+export function AndroidUpdatePanel({ onUpToDate, onUpdateRequired, onUpdateCheckFailed }: AndroidUpdatePanelProps) {
   const [status, setStatus] = useState('Checking for updates...');
   const [remoteUpdate, setRemoteUpdate] = useState<AndroidUpdateManifest | null>(null);
   const [hasUpdate, setHasUpdate] = useState(false);
@@ -47,12 +53,19 @@ export function AndroidUpdatePanel() {
       setRemoteUpdate(manifest);
       setHasUpdate(updateAvailable);
       setStatus(updateAvailable ? `Update available: ${updateManifest.currentVersion} -> ${manifest.version}` : 'You are up to date.');
+
+      if (updateAvailable) {
+        onUpdateRequired?.();
+      } else {
+        window.setTimeout(() => onUpToDate?.(), 650);
+      }
     } catch (error) {
       console.error('[Kodiak Connect] Android update check failed', error);
       setStatus('Updater is offline.');
       setRemoteUpdate(null);
       setHasUpdate(false);
       setHasError(true);
+      onUpdateCheckFailed?.();
     } finally {
       setIsChecking(false);
     }
@@ -101,3 +114,4 @@ export function AndroidUpdatePanel() {
     </KodiakStatusCard>
   );
 }
+

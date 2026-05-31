@@ -85,7 +85,13 @@ function SocialLinks() {
   );
 }
 
-export function UpdaterPanel() {
+interface UpdaterPanelProps {
+  onUpToDate?: () => void;
+  onUpdateRequired?: () => void;
+  onUpdateCheckFailed?: () => void;
+}
+
+export function UpdaterPanel({ onUpToDate, onUpdateRequired, onUpdateCheckFailed }: UpdaterPanelProps) {
   const [status, setStatus] = useState<DesktopUpdaterStatus>('checking');
   const [updateInfo, setUpdateInfo] = useState<DesktopUpdateInfo | null>(null);
   const [progressText, setProgressText] = useState('Checking current version...');
@@ -100,10 +106,17 @@ export function UpdaterPanel() {
       setUpdateInfo(update);
       setStatus(update ? 'available' : 'not-available');
       setProgressText(update ? 'A new version is ready.' : 'Latest desktop version installed.');
+
+      if (update) {
+        onUpdateRequired?.();
+      } else {
+        window.setTimeout(() => onUpToDate?.(), 650);
+      }
     } catch (error) {
       console.error('[Kodiak Connect] Updater check failed', error);
       setStatus('error');
       setProgressText('Could not reach the update server.');
+      onUpdateCheckFailed?.();
     }
   }, []);
 
@@ -166,3 +179,4 @@ export function UpdaterPanel() {
     </KodiakStatusCard>
   );
 }
+

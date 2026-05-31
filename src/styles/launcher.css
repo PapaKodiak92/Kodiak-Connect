@@ -379,3 +379,498 @@
     display: none !important;
   }
 }
+
+/* Login gate */
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: calc(42px + 1rem) 1rem 1rem;
+}
+
+.login-card {
+  display: grid;
+  gap: 1.2rem;
+  width: min(520px, 100%);
+  border: 1px solid rgba(251, 146, 60, 0.2);
+  border-radius: 26px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(2, 6, 23, 0.86));
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 247, 237, 0.04);
+  padding: 1.35rem;
+}
+
+.login-card__brand {
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.login-card__brand h1 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(2.3rem, 8vw, 3.8rem);
+  line-height: 0.95;
+}
+
+.login-card__brand p:last-child {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.login-form label {
+  display: grid;
+  gap: 0.42rem;
+  color: #fed7aa;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.login-form input {
+  width: 100%;
+  border: 1px solid rgba(251, 146, 60, 0.2);
+  border-radius: 15px;
+  background: rgba(2, 6, 23, 0.62);
+  color: #fff7ed;
+  font: inherit;
+  padding: 0.85rem 0.95rem;
+  outline: none;
+}
+
+.login-form input:focus {
+  border-color: rgba(251, 146, 60, 0.76);
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.12);
+}
+
+.login-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.login-status {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid rgba(251, 146, 60, 0.14);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 0.82rem 0.9rem;
+}
+
+@media (max-width: 520px) {
+  .login-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Login screen compact no-scroll patch */
+.login-shell {
+  min-height: calc(100vh - 42px) !important;
+  height: calc(100vh - 42px) !important;
+  box-sizing: border-box !important;
+  padding: calc(42px + 0.55rem) 1rem 0.75rem !important;
+  overflow: hidden !important;
+  align-items: center !important;
+}
+
+.login-card {
+  width: min(520px, 100%) !important;
+  max-height: calc(100vh - 42px - 1.5rem) !important;
+  gap: 1rem !important;
+  padding: 1.15rem 1.25rem !important;
+  overflow: hidden !important;
+}
+
+.login-card__brand {
+  gap: 0.75rem !important;
+}
+
+.login-card__brand .brand-orb--large {
+  width: 4rem !important;
+  height: 4rem !important;
+  border-radius: 22px !important;
+}
+
+.login-card__brand h1 {
+  font-size: clamp(2.25rem, 7vw, 3.35rem) !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.login-card__brand p:last-child {
+  font-size: 0.98rem !important;
+}
+
+.login-form {
+  gap: 0.72rem !important;
+}
+
+.login-form input {
+  padding: 0.78rem 0.9rem !important;
+}
+
+.login-actions {
+  margin-top: 0.15rem !important;
+}
+
+.login-status {
+  display: none !important;
+}
+
+@media (max-height: 680px) {
+  .login-card__brand .brand-orb--large {
+    width: 3.35rem !important;
+    height: 3.35rem !important;
+  }
+
+  .login-card__brand h1 {
+    font-size: 2.55rem !important;
+  }
+
+  .login-card {
+    gap: 0.8rem !important;
+    padding: 1rem 1.1rem !important;
+  }
+}
+
+/* HARD FIX: create account must fit normal launcher window */
+.login-card--create-account {
+  width: min(720px, calc(100vw - 2rem)) !important;
+  max-height: calc(100vh - 42px - 1.1rem) !important;
+  gap: 0.72rem !important;
+  padding: 0.9rem 1.05rem !important;
+}
+
+.login-card--create-account .login-card__brand {
+  gap: 0.45rem !important;
+}
+
+.login-card--create-account .brand-orb--large {
+  width: 3rem !important;
+  height: 3rem !important;
+  border-radius: 18px !important;
+}
+
+.login-card--create-account h1 {
+  font-size: clamp(2rem, 5.5vw, 2.75rem) !important;
+  margin-bottom: 0.1rem !important;
+}
+
+.login-card--create-account .login-card__brand p:last-child {
+  font-size: 0.9rem !important;
+}
+
+.login-card--create-account .login-form {
+  gap: 0.48rem !important;
+}
+
+.login-card--create-account .login-form label {
+  gap: 0.26rem !important;
+  font-size: 0.82rem !important;
+}
+
+.login-card--create-account .login-form input {
+  min-height: 2.65rem !important;
+  padding: 0.62rem 0.8rem !important;
+}
+
+.login-card--create-account .login-form__split {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0.65rem !important;
+}
+
+.login-card--create-account .login-helper {
+  margin: 0.05rem 0 0 !important;
+  font-size: 0.75rem !important;
+  line-height: 1.25 !important;
+}
+
+.login-card--create-account .login-actions {
+  margin-top: 0.15rem !important;
+  grid-template-columns: 1fr 1fr !important;
+}
+
+.login-card--create-account .login-actions button {
+  min-height: 2.85rem !important;
+  padding: 0.65rem 0.85rem !important;
+}
+
+@media (max-width: 760px) {
+  .login-card--create-account {
+    width: min(520px, calc(100vw - 1rem)) !important;
+    overflow: auto !important;
+  }
+
+  .login-card--create-account .login-form__split {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-height: 620px) {
+  .login-card--create-account {
+    overflow: auto !important;
+  }
+
+  .login-card--create-account .brand-orb--large {
+    width: 2.55rem !important;
+    height: 2.55rem !important;
+  }
+
+  .login-card--create-account h1 {
+    font-size: 2.15rem !important;
+  }
+}
+
+/* Kodiak scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(249, 115, 22, 0.75) rgba(15, 23, 42, 0.55);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(15, 23, 42, 0.75);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(251, 146, 60, 0.95), rgba(194, 65, 12, 0.95));
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(253, 186, 116, 0.95), rgba(249, 115, 22, 0.95));
+}
+
+/* Create account cleanup */
+.login-helper {
+  display: none !important;
+}
+
+.login-card--create-account {
+  scrollbar-gutter: stable;
+}
+
+.login-card--create-account .login-form {
+  gap: 0.55rem !important;
+}
+
+.login-card--create-account .login-form input {
+  min-height: 2.55rem !important;
+}
+
+.login-card--create-account .login-actions {
+  margin-top: 0.35rem !important;
+}
+
+/* Field warning + Turnstile */
+.login-field-warning {
+  color: #fb7185;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.turnstile-wrap,
+.turnstile-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 4.1rem;
+  border: 1px solid rgba(251, 146, 60, 0.18);
+  border-radius: 15px;
+  background: rgba(2, 6, 23, 0.42);
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.turnstile-wrap p {
+  margin: 0.35rem 0 0;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.login-card--create-account .login-form {
+  gap: 0.48rem !important;
+}
+
+/* Auth validation messages */
+.login-status--error,
+.login-status--success {
+  display: flex !important;
+}
+
+.login-status--success {
+  border-color: rgba(34, 197, 94, 0.22) !important;
+  background: rgba(20, 83, 45, 0.22) !important;
+  color: #dcfce7 !important;
+}
+
+.login-field-warning {
+  color: #fb7185;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.2;
+  padding-top: 0.12rem;
+}
+
+.login-form label:has(.login-field-warning) input {
+  border-color: rgba(251, 113, 133, 0.72) !important;
+}
+
+/* Desktop: hide create-account scrollbar when layout fits */
+@media (min-width: 851px) {
+  .login-card--create-account {
+    overflow: hidden !important;
+    scrollbar-width: none !important;
+    scrollbar-gutter: auto !important;
+  }
+
+  .login-card--create-account::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+  }
+}
+
+/* Mobile: allow scrolling if the account form needs it */
+@media (max-width: 850px) {
+  .login-card--create-account {
+    overflow: auto !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(249, 115, 22, 0.75) rgba(15, 23, 42, 0.55) !important;
+  }
+
+  .login-card--create-account::-webkit-scrollbar {
+    display: block !important;
+    width: 8px !important;
+  }
+
+  .login-card--create-account::-webkit-scrollbar-track {
+    border-radius: 999px !important;
+    background: rgba(15, 23, 42, 0.55) !important;
+  }
+
+  .login-card--create-account::-webkit-scrollbar-thumb {
+    border: 2px solid rgba(15, 23, 42, 0.75) !important;
+    border-radius: 999px !important;
+    background: linear-gradient(180deg, rgba(251, 146, 60, 0.95), rgba(194, 65, 12, 0.95)) !important;
+  }
+}
+
+/* Custom password reveal eye */
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.password-field input {
+  padding-right: 3rem !important;
+}
+
+.password-field input::-ms-reveal,
+.password-field input::-ms-clear {
+  display: none;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.72rem;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  opacity: 0.95;
+  padding: 0;
+  transform: translateY(-50%);
+  transition:
+    color 160ms ease,
+    opacity 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.password-toggle:hover {
+  background: rgba(251, 146, 60, 0.08);
+  color: #cbd5e1;
+  box-shadow: none;
+}
+
+.password-toggle--active {
+  background: rgba(249, 115, 22, 0.12);
+  color: #fb923c;
+  box-shadow: 0 0 14px rgba(249, 115, 22, 0.16);
+}
+
+.password-toggle svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  pointer-events: none;
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid rgba(251, 146, 60, 0.85);
+  outline-offset: 2px;
+}
+
+/* FIX: password eye should not jump on hover/click */
+.password-toggle,
+.password-toggle:hover,
+.password-toggle:focus,
+.password-toggle:active,
+.password-toggle:focus-visible,
+.password-toggle.password-toggle--active,
+.password-toggle.password-toggle--active:hover,
+.password-toggle.password-toggle--active:focus,
+.password-toggle.password-toggle--active:active {
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+
+.password-toggle {
+  min-width: 2rem !important;
+  min-height: 2rem !important;
+  line-height: 1 !important;
+  transition:
+    color 160ms ease,
+    opacity 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease !important;
+}
+
+.password-toggle:hover,
+.password-toggle:active {
+  box-shadow: none !important;
+}
+
+.password-toggle--active,
+.password-toggle--active:hover,
+.password-toggle--active:active {
+  color: #fb923c !important;
+  background: rgba(249, 115, 22, 0.12) !important;
+  box-shadow: 0 0 14px rgba(249, 115, 22, 0.16) !important;
+}

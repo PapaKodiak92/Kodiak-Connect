@@ -1,10 +1,13 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
+import { LoginScreen } from '../features/auth/LoginScreen';
 import { AndroidUpdatePanel } from '../features/updater/AndroidUpdatePanel';
 import { UpdaterPanel } from '../features/updater/UpdaterPanel';
 import { KodiakSplashScreen } from '../components/layout/KodiakSplashScreen';
 import { WindowTitleBar } from '../components/layout/WindowTitleBar';
 import { openAndroidApkDownload } from '../platform/android/androidUpdateService';
 import { usePlatformInfo } from '../platform/usePlatformInfo';
+
+type AppState = 'booting' | 'checking-update' | 'update-required' | 'login';
 
 const launcherLinks = [
   {
@@ -68,20 +71,42 @@ function LauncherSocialLinks({ isMobile }: LauncherSocialLinksProps) {
 
 export function AppShell() {
   const platform = usePlatformInfo();
-  const [isBooting, setIsBooting] = useState(true);
+  const [appState, setAppState] = useState<AppState>('booting');
   const updaterOnline = true;
   const serverOnline = false;
   const isMobile = platform.kind === 'android';
   const platformLabel = isMobile ? 'Mobile' : platform.kind === 'desktop' ? 'Desktop' : 'Web';
-  const updaterPanel = isMobile ? <AndroidUpdatePanel /> : <UpdaterPanel />;
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setIsBooting(false), 420);
+    const timeout = window.setTimeout(() => setAppState('checking-update'), 420);
     return () => window.clearTimeout(timeout);
   }, []);
 
-  if (isBooting) {
+  const handleUpToDate = useCallback(() => {
+    setAppState('login');
+  }, []);
+
+  const handleUpdateRequired = useCallback(() => {
+    setAppState('update-required');
+  }, []);
+
+  const updaterPanel = isMobile ? (
+    <AndroidUpdatePanel onUpToDate={handleUpToDate} onUpdateRequired={handleUpdateRequired} onUpdateCheckFailed={handleUpdateRequired} />
+  ) : (
+    <UpdaterPanel onUpToDate={handleUpToDate} onUpdateRequired={handleUpdateRequired} onUpdateCheckFailed={handleUpdateRequired} />
+  );
+
+  if (appState === 'booting') {
     return <KodiakSplashScreen />;
+  }
+
+  if (appState === 'login') {
+    return (
+      <>
+        <WindowTitleBar platformKind={platform.kind} />
+        <LoginScreen />
+      </>
+    );
   }
 
   return (
@@ -99,8 +124,12 @@ export function AppShell() {
 
             <div>
               <p className="eyebrow eyebrow--ember">Kodiak Connect</p>
-              <h1>Ready when you are.</h1>
-              <p>Keep your app current while the workspace is prepared.</p>
+              <h1>{appState === 'checking-update' ? 'Checking updates.' : 'Update required.'}</h1>
+              <p>
+                {appState === 'checking-update'
+                  ? 'Kodiak Connect is validating your version before login.'
+                  : 'Install the latest version to continue.'}
+              </p>
             </div>
           </div>
 
