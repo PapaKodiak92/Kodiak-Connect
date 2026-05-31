@@ -51,7 +51,6 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   const [roomId, setRoomId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrixTextMessage[]>([]);
   const [draftMessage, setDraftMessage] = useState('');
-  const [statusText, setStatusText] = useState('Connecting to Matrix room...');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -63,7 +62,6 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
     async (targetRoomId: string) => {
       const recentMessages = await loadRecentMessages(identity, targetRoomId);
       setMessages(recentMessages);
-      setStatusText(recentMessages.length ? 'Live staging room connected.' : 'Room connected. No messages yet.');
     },
     [identity],
   );
@@ -81,7 +79,6 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
 
       setIsLoading(true);
       setErrorText(null);
-      setStatusText('Joining Matrix room...');
 
       try {
         const joinedRoomId = await joinRoomByAlias(identity, activeChannel.matrixAlias);
@@ -173,10 +170,12 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
       </header>
 
       <div className="matrix-chat-body">
-        <div className="matrix-chat-status">
-          <span className={`status-light ${errorText ? 'status-light--offline' : 'status-light--online'}`} aria-hidden="true" />
-          <span>{errorText ?? statusText}</span>
-        </div>
+        {errorText ? (
+          <div className="matrix-chat-status matrix-chat-status--error">
+            <span className="status-light status-light--offline" aria-hidden="true" />
+            <span>{errorText}</span>
+          </div>
+        ) : null}
 
         {isLoading ? (
           <div className="matrix-empty-state">Loading #general...</div>
