@@ -86,8 +86,9 @@
 }
 
 .launcher-shell .kodiak-status-card {
+  position: relative;
   min-height: 100%;
-  padding: 1rem;
+  padding: 1rem 1rem 4.3rem;
 }
 
 .launcher-shell .kodiak-status-card__description {
@@ -96,24 +97,32 @@
 }
 
 .updater-footer-row {
+  display: block;
+}
+
+.updater-footer-row .button-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
 .updater-social-dock {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 5;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 0.45rem;
-  margin-left: auto;
+  white-space: nowrap;
 }
 
 .launcher-social-link {
   display: grid;
   width: 2.2rem;
   height: 2.2rem;
+  flex: 0 0 auto;
   place-items: center;
   border: 1px solid rgba(251, 146, 60, 0.22);
   border-radius: 999px;
@@ -152,12 +161,9 @@
     grid-template-columns: 1fr;
   }
 
-  .updater-footer-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .updater-social-dock {
-    margin-left: 0;
+    position: static;
+    justify-content: flex-start;
+    margin-top: 0.75rem;
   }
 }
