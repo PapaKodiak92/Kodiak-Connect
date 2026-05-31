@@ -192,6 +192,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const isTurnstileConfigured = Boolean(kodiakEnv.turnstileSiteKey);
   const showForgotPassword = failedAttempts >= 3;
   const isLoginCoolingDown = Boolean(loginCooldownUntil && loginCooldownUntil > now);
+  const loginCooldownSeconds = loginCooldownUntil ? Math.max(0, Math.ceil((loginCooldownUntil - now) / 1000)) : 0;
   const isSignInDisabled = isSigningIn || isLoginCoolingDown;
 
   const emailMismatch = email.length > 0 && confirmEmail.length > 0 && normalizeEmail(email) !== normalizeEmail(confirmEmail);
@@ -226,6 +227,18 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     if (mode === 'reset-password') return 'Enter your email to start password recovery.';
     return 'Sign in to enter your private workspace.';
   }, [mode]);
+
+  const signInButtonText = useMemo(() => {
+    if (isSigningIn) {
+      return 'Signing In...';
+    }
+
+    if (isLoginCoolingDown) {
+      return `Try again in ${loginCooldownSeconds}s`;
+    }
+
+    return 'Sign In';
+  }, [isLoginCoolingDown, isSigningIn, loginCooldownSeconds]);
 
   function setError(text: string) {
     setMessage({ tone: 'error', text });
@@ -390,7 +403,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
             <div className="login-actions">
               <button type="submit" className="button-primary" disabled={isSignInDisabled}>
-                {isSigningIn ? 'Signing In...' : 'Sign In'}
+                {signInButtonText}
               </button>
 
               <button type="button" onClick={() => switchMode('create-account')} disabled={isSigningIn}>
