@@ -42,6 +42,78 @@ button:hover:not(:disabled) {
   box-shadow: 0 14px 36px rgba(249, 115, 22, 0.24);
 }
 
+.window-titlebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  border-bottom: 1px solid rgba(251, 146, 60, 0.18);
+  background: rgba(7, 11, 20, 0.96);
+  backdrop-filter: blur(16px);
+  user-select: none;
+}
+
+.window-titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding-left: 0.8rem;
+  color: #fff7ed;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.window-titlebar__brand img {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+.window-titlebar__controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+.window-titlebar__controls button {
+  display: grid;
+  width: 46px;
+  height: 100%;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid rgba(251, 146, 60, 0.12);
+  border-radius: 0;
+  background: transparent;
+  color: #fed7aa;
+  box-shadow: none;
+  font-size: 0.88rem;
+  line-height: 1;
+  padding: 0;
+  transform: none;
+}
+
+.window-titlebar__controls button:hover {
+  background: rgba(251, 146, 60, 0.14);
+  box-shadow: none;
+  transform: none;
+}
+
+.window-titlebar__close:hover {
+  background: rgba(239, 68, 68, 0.82) !important;
+  color: #fff7ed;
+}
+
+.app-shell--framed {
+  padding-top: calc(42px + 1rem);
+}
+
 .hero-card,
 .panel,
 .auth-card,
