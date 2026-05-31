@@ -1,0 +1,78 @@
+.matrix-chat-body {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 1rem;
+  overflow: hidden;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.matrix-chat-status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: fit-content;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.matrix-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  overflow: auto;
+  padding-right: 0.35rem;
+}
+
+.matrix-message {
+  width: min(720px, 92%);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 0.9rem 1rem;
+}
+
+.matrix-message--own {
+  align-self: flex-end;
+  border-color: rgba(251, 146, 60, 0.24);
+  background: rgba(67, 20, 7, 0.34);
+}
+
+.matrix-message header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.matrix-message strong {
+  color: #fff7ed;
+}
+
+.matrix-message time {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.matrix-message p {
+  margin: 0;
+  color: #e5e7eb;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.matrix-empty-state {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  border: 1px dashed rgba(251, 146, 60, 0.22);
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.42);
+  color: #cbd5e1;
+  text-align: center;
+  padding: 1.5rem;
+}
