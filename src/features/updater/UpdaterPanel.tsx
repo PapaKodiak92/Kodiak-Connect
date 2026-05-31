@@ -64,11 +64,11 @@ function SocialLinks() {
       <a className="launcher-social-link" href="https://x.com/PapaKodiak92" target="_blank" rel="noreferrer" title="X" aria-label="X">
         <span aria-hidden="true">X</span>
       </a>
-      <a className="launcher-social-link" href="https://www.instagram.com/papakodiak92/" target="_blank" rel="noreferrer" title="Instagram" aria-label="Instagram">
-        <span aria-hidden="true">◎</span>
+      <a className="launcher-social-link launcher-social-link--wide" href="https://www.instagram.com/papakodiak92/" target="_blank" rel="noreferrer" title="Instagram" aria-label="Instagram">
+        <span aria-hidden="true">IG</span>
       </a>
-      <a className="launcher-social-link" href="https://buymeacoffee.com/papakodiak" target="_blank" rel="noreferrer" title="Buy me a coffee" aria-label="Buy me a coffee">
-        <span aria-hidden="true">☕</span>
+      <a className="launcher-social-link launcher-social-link--wide" href="https://buymeacoffee.com/papakodiak" target="_blank" rel="noreferrer" title="Buy me a coffee" aria-label="Buy me a coffee">
+        <span aria-hidden="true">BMC</span>
       </a>
     </nav>
   );
@@ -153,7 +153,7 @@ export function UpdaterPanel() {
             Check again
           </button>
           <button type="button" className="button-primary" onClick={handleInstallUpdate} disabled={status !== 'available'}>
-            Download & install
+            Install
           </button>
         </div>
         <SocialLinks />
