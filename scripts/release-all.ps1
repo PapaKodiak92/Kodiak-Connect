@@ -27,6 +27,18 @@ function Invoke-Step {
   & $Action
 }
 
+function Invoke-NativeChecked {
+  param(
+    [Parameter(Mandatory = $true)][scriptblock]$Command,
+    [Parameter(Mandatory = $true)][string]$ErrorMessage
+  )
+
+  & $Command
+  if ($LASTEXITCODE -ne 0) {
+    throw "$ErrorMessage (exit code $LASTEXITCODE)"
+  }
+}
+
 function Assert-File {
   param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -37,7 +49,11 @@ function Assert-File {
 
 Push-Location $RepoRoot
 try {
-  $InitialStatus = git status --porcelain
+  $InitialStatus = & git status --porcelain
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to read git status.'
+  }
+
   if ($InitialStatus) {
     throw "Working tree is not clean. Commit, stash, or restore changes before running release-all."
   }
@@ -50,14 +66,14 @@ try {
 
   Invoke-Step "Build Windows MSI and updater signature" {
     $env:TAURI_SIGNING_PRIVATE_KEY = $SigningKeyPath
-    npm run tauri:build
+    Invoke-NativeChecked -ErrorMessage 'Windows Tauri build failed' -Command { npm run tauri:build }
   }
 
   Invoke-Step "Build Android debug APK" {
-    npm run cap:sync
+    Invoke-NativeChecked -ErrorMessage 'Capacitor sync failed' -Command { npm run cap:sync }
     Push-Location (Join-Path $RepoRoot 'android')
     try {
-      .\gradlew.bat assembleDebug
+      Invoke-NativeChecked -ErrorMessage 'Android debug APK build failed' -Command { .\gradlew.bat assembleDebug }
     }
     finally {
       Pop-Location
@@ -74,9 +90,22 @@ try {
 
   if (-not $SkipGitPush) {
     Invoke-Step "Commit and push version bump for VPS Linux build" {
-      git add package.json package-lock.json src-tauri/tauri.conf.json src/features/updater/updateManifest.ts src/features/updater/UpdaterPanel.tsx
-      git commit -m "chore: prepare $Version release"
-      git push
+      Invoke-NativeChecked -ErrorMessage 'Failed to stage release files' -Command {
+        git add package.json package-lock.json src-tauri/tauri.conf.json src/features/updater/updateManifest.ts src/features/updater/UpdaterPanel.tsx
+      }
+
+      $StagedFiles = & git diff --cached --name-only
+      if ($LASTEXITCODE -ne 0) {
+        throw 'Failed to inspect staged release files.'
+      }
+
+      if ($StagedFiles) {
+        Invoke-NativeChecked -ErrorMessage 'Failed to commit release version bump' -Command { git commit -m "chore: prepare $Version release" }
+        Invoke-NativeChecked -ErrorMessage 'Failed to push release version bump' -Command { git push }
+      }
+      else {
+        Write-Host "No version changes to commit; assuming $Version is already pushed." -ForegroundColor Yellow
+      }
     }
   }
 
@@ -113,11 +142,16 @@ test -f '$RemoteLinuxDir/$RemoteLinuxDeb'
 test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig'
 "@
 
+    $RemoteScript = ($RemoteScript -replace "`r`n", "`n").TrimStart() + "`n"
     $TempScript = [System.IO.Path]::GetTempFileName()
     try {
       [System.IO.File]::WriteAllText($TempScript, $RemoteScript, $Utf8NoBom)
-      & scp $TempScript "${VpsHost}:/tmp/kodiak-release-linux-$Version.sh"
-      & ssh $VpsHost "bash /tmp/kodiak-release-linux-$Version.sh && rm -f /tmp/kodiak-release-linux-$Version.sh"
+      Invoke-NativeChecked -ErrorMessage 'Failed to upload Linux release script to VPS' -Command {
+        scp $TempScript "${VpsHost}:/tmp/kodiak-release-linux-$Version.sh"
+      }
+      Invoke-NativeChecked -ErrorMessage 'Linux DEB build/publish failed on VPS' -Command {
+        ssh $VpsHost "bash /tmp/kodiak-release-linux-$Version.sh && rm -f /tmp/kodiak-release-linux-$Version.sh"
+      }
     }
     finally {
       Remove-Item $TempScript -Force -ErrorAction SilentlyContinue
@@ -125,19 +159,32 @@ test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig'
   }
 
   Invoke-Step "Upload Windows and Android artifacts to VPS" {
-    & ssh $VpsHost "mkdir -p '$RemoteWindowsDir' '$RemoteAndroidDir'"
-    & scp $WindowsMsi "${VpsHost}:$RemoteWindowsDir/$RemoteWindowsMsi"
-    & scp $WindowsSig "${VpsHost}:$RemoteWindowsDir/$RemoteWindowsMsi.sig"
-    & scp $AndroidApk "${VpsHost}:$RemoteAndroidDir/$RemoteAndroidApk"
+    Invoke-NativeChecked -ErrorMessage 'Failed to create remote Windows/Android release folders' -Command {
+      ssh $VpsHost "mkdir -p '$RemoteWindowsDir' '$RemoteAndroidDir'"
+    }
+    Invoke-NativeChecked -ErrorMessage 'Failed to upload Windows MSI' -Command {
+      scp $WindowsMsi "${VpsHost}:$RemoteWindowsDir/$RemoteWindowsMsi"
+    }
+    Invoke-NativeChecked -ErrorMessage 'Failed to upload Windows MSI signature' -Command {
+      scp $WindowsSig "${VpsHost}:$RemoteWindowsDir/$RemoteWindowsMsi.sig"
+    }
+    Invoke-NativeChecked -ErrorMessage 'Failed to upload Android APK' -Command {
+      scp $AndroidApk "${VpsHost}:$RemoteAndroidDir/$RemoteAndroidApk"
+    }
   }
 
   Invoke-Step "Verify all remote artifacts before manifest" {
-    & ssh $VpsHost "test -f '$RemoteWindowsDir/$RemoteWindowsMsi' && test -f '$RemoteWindowsDir/$RemoteWindowsMsi.sig' && test -f '$RemoteLinuxDir/$RemoteLinuxDeb' && test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig' && test -f '$RemoteAndroidDir/$RemoteAndroidApk'"
+    Invoke-NativeChecked -ErrorMessage 'Remote release artifact verification failed' -Command {
+      ssh $VpsHost "test -f '$RemoteWindowsDir/$RemoteWindowsMsi' && test -f '$RemoteWindowsDir/$RemoteWindowsMsi.sig' && test -f '$RemoteLinuxDir/$RemoteLinuxDeb' && test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig' && test -f '$RemoteAndroidDir/$RemoteAndroidApk'"
+    }
   }
 
   Invoke-Step "Generate and upload release manifest" {
     $WindowsSignature = (Get-Content -Path $WindowsSig -Raw).Trim()
     $LinuxSignature = ((& ssh $VpsHost "cat '$RemoteLinuxDir/$RemoteLinuxDeb.sig'") -join "`n").Trim()
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Failed to read Linux updater signature from VPS.'
+    }
 
     if (-not $LinuxSignature) {
       throw 'Linux updater signature could not be read from VPS.'
@@ -164,7 +211,9 @@ test -f '$RemoteLinuxDir/$RemoteLinuxDeb.sig'
 
     try {
       [System.IO.File]::WriteAllText($TempManifest, $ManifestJson, $Utf8NoBom)
-      & scp $TempManifest "${VpsHost}:$RemoteRoot/manifest.json"
+      Invoke-NativeChecked -ErrorMessage 'Failed to upload release manifest' -Command {
+        scp $TempManifest "${VpsHost}:$RemoteRoot/manifest.json"
+      }
     }
     finally {
       Remove-Item $TempManifest -Force -ErrorAction SilentlyContinue
