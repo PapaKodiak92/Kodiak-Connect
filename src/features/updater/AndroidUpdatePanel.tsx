@@ -29,7 +29,7 @@ function isNewerVersion(remoteVersion: string, currentVersion: string) {
 }
 
 export function AndroidUpdatePanel() {
-  const [status, setStatus] = useState('Checking Android release channel...');
+  const [status, setStatus] = useState('Checking for updates...');
   const [remoteUpdate, setRemoteUpdate] = useState<AndroidUpdateManifest | null>(null);
   const [hasUpdate, setHasUpdate] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
@@ -38,7 +38,7 @@ export function AndroidUpdatePanel() {
   const checkAndroidUpdate = useCallback(async () => {
     setIsChecking(true);
     setHasError(false);
-    setStatus('Checking Android release channel...');
+    setStatus('Checking for updates...');
 
     try {
       const manifest = await getAndroidUpdateManifest();
@@ -46,10 +46,10 @@ export function AndroidUpdatePanel() {
 
       setRemoteUpdate(manifest);
       setHasUpdate(updateAvailable);
-      setStatus(updateAvailable ? `Android APK ready: ${updateManifest.currentVersion} → ${manifest.version}` : 'Kodiak Connect is up to date on Android.');
+      setStatus(updateAvailable ? `Update available: ${updateManifest.currentVersion} -> ${manifest.version}` : 'You are up to date.');
     } catch (error) {
       console.error('[Kodiak Connect] Android update check failed', error);
-      setStatus('Android update check failed. Try again when you have a stable connection.');
+      setStatus('Updater is offline.');
       setRemoteUpdate(null);
       setHasUpdate(false);
       setHasError(true);
@@ -76,13 +76,14 @@ export function AndroidUpdatePanel() {
 
   return (
     <KodiakStatusCard
-      eyebrow="Android release channel"
-      title="APK update helper"
-      description="Download Android builds directly on this device. Android will ask you to approve installation before replacing the app."
+      eyebrow="Updater status"
+      title="Updater"
+      description="Keep Kodiak Connect current."
       statusText={status}
-      detailText={remoteUpdate ? `Latest hosted APK: ${remoteUpdate.version}` : 'Hosted APK manifest is checked securely from updates.kodiak-connect.com.'}
+      detailText={remoteUpdate ? `Latest APK: ${remoteUpdate.version}` : 'Checking hosted APK.'}
       badgeText={`v${updateManifest.currentVersion}`}
       tone={tone}
+      showIcon={false}
     >
       <div className="button-row">
         <button type="button" onClick={() => void checkAndroidUpdate()} disabled={isChecking}>
@@ -94,7 +95,7 @@ export function AndroidUpdatePanel() {
           disabled={!hasUpdate || !remoteUpdate}
           onClick={() => remoteUpdate && openAndroidApkDownload(remoteUpdate.url)}
         >
-          Download latest APK
+          Download APK
         </button>
       </div>
     </KodiakStatusCard>
