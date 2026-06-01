@@ -5,6 +5,7 @@ import {
   loadRecentMessages,
   MatrixRestError,
   sendTextMessage,
+  sendReaction,
   type MatrixTextMessage,
 } from '../matrix/matrixRestClient';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
@@ -41,6 +42,7 @@ const REPLY_EVENT_PREFIX = 'KC_REPLY_EVENT=';
 const REPLY_SENDER_PREFIX = 'KC_REPLY_SENDER=';
 const REPLY_PREVIEW_PREFIX = 'KC_REPLY_PREVIEW=';
 const MENTION_PATTERN = /(^|\s)(@[a-zA-Z0-9._-]{2,32})/g;
+const REACTION_OPTIONS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F525}', '\u{1F440}'];
 const ACTIVE_MENTION_PATTERN = /(^|\s)@([a-zA-Z0-9._-]{0,32})$/;
 
 function getDisplayName(userId: string) {
@@ -276,6 +278,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   const [messages, setMessages] = useState<MatrixTextMessage[]>([]);
   const [draftMessage, setDraftMessage] = useState('');
   const [replyTarget, setReplyTarget] = useState<MatrixTextMessage | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -420,6 +423,23 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
     insertMentionSuggestion(mentionSuggestions[0]);
   }
 
+  async function handleReactToMessage(message: MatrixTextMessage, reactionKey: string) {
+    if (!roomId || !canPost) {
+      return;
+    }
+
+    setErrorText(null);
+
+    try {
+      await sendReaction(identity, roomId, message.eventId, reactionKey);
+      setReactionPickerMessageId(null);
+      await refreshMessages(roomId);
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to send Matrix reaction', error);
+      setErrorText(getMatrixErrorMessage(error, activeChannel));
+    }
+  }
+
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -504,8 +524,43 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
                       <time>{formatMessageTime(message.originServerTs)}</time>
                     </header>
                     <p>{renderMessageTextWithMentions(parsedMessage.body, currentUserLocalpart)}</p>
+
+                    {message.reactions?.length ? (
+                      <div className="matrix-reactions" aria-label="Message reactions">
+                        {message.reactions.map((reaction) => (
+                          <button
+                            key={reaction.key}
+                            type="button"
+                            onClick={() => void handleReactToMessage(message, reaction.key)}
+                            title={reaction.senders.map(getDisplayName).join(', ')}
+                          >
+                            <span>{reaction.key}</span>
+                            <strong>{reaction.count}</strong>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {reactionPickerMessageId === message.eventId ? (
+                      <div className="matrix-reaction-picker" aria-label="Choose a reaction">
+                        {REACTION_OPTIONS.map((reactionKey) => (
+                          <button key={reactionKey} type="button" onClick={() => void handleReactToMessage(message, reactionKey)}>
+                            {reactionKey}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
                     {canPost ? (
                       <div className="matrix-message-actions">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setReactionPickerMessageId((currentMessageId) => (currentMessageId === message.eventId ? null : message.eventId))
+                          }
+                        >
+                          React
+                        </button>
                         <button type="button" onClick={() => setReplyTarget({ ...message, body: parsedMessage.body })}>
                           Reply
                         </button>
