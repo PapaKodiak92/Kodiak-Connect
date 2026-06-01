@@ -1,4 +1,4 @@
-export type ChannelKind = 'announcement' | 'text' | 'safety' | 'family' | 'business';
+export type ChannelKind = 'announcement' | 'text' | 'safety' | 'family' | 'business' | 'dm';
 
 export interface WorkspaceChannel {
   id: string;
@@ -7,6 +7,8 @@ export interface WorkspaceChannel {
   description: string;
   disabled?: boolean;
   matrixAlias?: string;
+  matrixDmUserId?: string;
+  dmDisplayName?: string;
   readOnly?: boolean;
   allowedPosterIds?: string[];
 }
