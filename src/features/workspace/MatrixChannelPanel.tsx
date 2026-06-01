@@ -4,8 +4,10 @@ import {
   joinRoomByAlias,
   loadRecentMessages,
   MatrixRestError,
-  sendTextMessage,
+  redactMessage,
   sendReaction,
+  sendReplacementMessage,
+  sendTextMessage,
   type MatrixTextMessage,
 } from '../matrix/matrixRestClient';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
@@ -43,6 +45,7 @@ const REPLY_SENDER_PREFIX = 'KC_REPLY_SENDER=';
 const REPLY_PREVIEW_PREFIX = 'KC_REPLY_PREVIEW=';
 const MENTION_PATTERN = /(^|\s)(@[a-zA-Z0-9._-]{2,32})/g;
 const REACTION_OPTIONS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F525}', '\u{1F440}'];
+const PLATFORM_MODERATOR_IDS = ['@papakodiak:v2.kodiak-connect.com'];
 const ACTIVE_MENTION_PATTERN = /(^|\s)@([a-zA-Z0-9._-]{0,32})$/;
 
 function getDisplayName(userId: string) {
@@ -79,6 +82,10 @@ function getMatrixErrorMessage(error: unknown, activeChannel: WorkspaceChannel) 
   }
 
   return 'Kodiak Connect could not reach the Matrix room.';
+}
+
+function canModerateMessages(userId: string) {
+  return PLATFORM_MODERATOR_IDS.includes(userId);
 }
 
 function canPostInChannel(channel: WorkspaceChannel, userId: string) {
@@ -282,6 +289,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   const [messages, setMessages] = useState<MatrixTextMessage[]>([]);
   const [draftMessage, setDraftMessage] = useState('');
   const [replyTarget, setReplyTarget] = useState<MatrixTextMessage | null>(null);
+  const [editingMessage, setEditingMessage] = useState<MatrixTextMessage | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -296,6 +304,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   const activeMentionSearch = getActiveMentionSearch(draftMessage);
   const mentionSuggestions = getMentionSuggestions(messages, currentUserLocalpart, activeMentionSearch);
   const canPost = canPostInChannel(activeChannel, identity.userId);
+  const canModerate = canModerateMessages(identity.userId);
 
   const refreshMessages = useCallback(
     async (targetRoomId: string) => {
@@ -323,6 +332,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
       setIsLoading(true);
       setErrorText(null);
       setReplyTarget(null);
+      setEditingMessage(null);
 
       try {
         const joinedRoomId = await joinRoomByAlias(identity, activeChannel.matrixAlias);
@@ -427,6 +437,43 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
     insertMentionSuggestion(mentionSuggestions[0]);
   }
 
+  function startEditingMessage(message: MatrixTextMessage) {
+    const parsedMessage = parseMessageBody(message.body);
+
+    setEditingMessage({ ...message, body: parsedMessage.body });
+    setReplyTarget(null);
+    setReactionPickerMessageId(null);
+    setDraftMessage(parsedMessage.body);
+  }
+
+  function cancelEditingMessage() {
+    setEditingMessage(null);
+    setDraftMessage('');
+  }
+
+  async function handleDeleteMessage(message: MatrixTextMessage) {
+    if (!roomId || (!canModerate && message.sender !== identity.userId)) {
+      return;
+    }
+
+    const confirmed = window.confirm('Delete this message?');
+
+    if (!confirmed) {
+      return;
+    }
+
+    setErrorText(null);
+
+    try {
+      await redactMessage(identity, roomId, message.eventId, message.sender === identity.userId ? 'User deleted message' : 'Moderator deleted message');
+      setReactionPickerMessageId(null);
+      await refreshMessages(roomId);
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to delete Matrix message', error);
+      setErrorText(getMatrixErrorMessage(error, activeChannel));
+    }
+  }
+
   async function handleReactToMessage(message: MatrixTextMessage, reactionKey: string) {
     if (!roomId || !canPost || hasUserReacted(message, reactionKey, identity.userId)) {
       return;
@@ -457,7 +504,13 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
     setErrorText(null);
 
     try {
-      await sendTextMessage(identity, roomId, buildReplyBody(replyTarget, trimmedMessage));
+      if (editingMessage) {
+        await sendReplacementMessage(identity, roomId, editingMessage.eventId, trimmedMessage);
+        setEditingMessage(null);
+      } else {
+        await sendTextMessage(identity, roomId, buildReplyBody(replyTarget, trimmedMessage));
+      }
+
       setDraftMessage('');
       setReplyTarget(null);
       await refreshMessages(roomId);
@@ -528,6 +581,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
                       <time>{formatMessageTime(message.originServerTs)}</time>
                     </header>
                     <p>{renderMessageTextWithMentions(parsedMessage.body, currentUserLocalpart)}</p>
+                    {message.editedAt ? <span className="matrix-message__edited">edited</span> : null}
 
                     {message.reactions?.length ? (
                       <div className="matrix-reactions" aria-label="Message reactions">
@@ -569,6 +623,16 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
                         <button type="button" onClick={() => setReplyTarget({ ...message, body: parsedMessage.body })}>
                           Reply
                         </button>
+                        {message.sender === identity.userId ? (
+                          <button type="button" onClick={() => startEditingMessage({ ...message, body: parsedMessage.body })}>
+                            Edit
+                          </button>
+                        ) : null}
+                        {message.sender === identity.userId || canModerate ? (
+                          <button type="button" className="matrix-message-action--danger" onClick={() => void handleDeleteMessage(message)}>
+                            Delete
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>
@@ -582,7 +646,19 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
       </div>
 
       <form className="message-composer-placeholder" onSubmit={handleSendMessage}>
-        {replyTarget ? (
+        {editingMessage ? (
+          <div className="message-edit-preview">
+            <div>
+              <strong>Editing message</strong>
+              <span>Save your changes or cancel editing.</span>
+            </div>
+            <button type="button" onClick={cancelEditingMessage} aria-label="Cancel edit">
+              Cancel
+            </button>
+          </div>
+        ) : null}
+
+        {!editingMessage && replyTarget ? (
           <div className="message-reply-preview">
             <div>
               <strong>Replying to {getDisplayName(replyTarget.sender)}</strong>
@@ -607,14 +683,14 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
 
         <input
           type="text"
-          placeholder={getComposerPlaceholder(activeChannel, canPost, roomId, replyTarget)}
+          placeholder={editingMessage ? 'Edit message' : getComposerPlaceholder(activeChannel, canPost, roomId, replyTarget)}
           value={draftMessage}
           onChange={(event) => setDraftMessage(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           disabled={!roomId || isSending || !canPost}
         />
         <button type="submit" disabled={!roomId || isSending || !canPost || !draftMessage.trim()}>
-          {isSending ? 'Sending...' : activeChannel.readOnly ? 'Publish' : 'Send'}
+          {isSending ? (editingMessage ? 'Saving...' : 'Sending...') : editingMessage ? 'Save' : activeChannel.readOnly ? 'Publish' : 'Send'}
         </button>
       </form>
     </section>

@@ -8,6 +8,7 @@ export interface MatrixReactionSummary {
 
 export interface MatrixTextMessage {
   body: string;
+  editedAt?: number;
   eventId: string;
   originServerTs: number;
   reactions?: MatrixReactionSummary[];
@@ -36,6 +37,10 @@ interface MatrixEvent {
   content?: {
     body?: string;
     msgtype?: string;
+    'm.new_content'?: {
+      body?: string;
+      msgtype?: string;
+    };
     'm.relates_to'?: MatrixRelation;
   };
   event_id?: string;
@@ -51,6 +56,12 @@ interface MatrixRelation {
   'm.in_reply_to'?: {
     event_id?: string;
   };
+}
+
+interface MatrixEditSummary {
+  body: string;
+  editedAt: number;
+  sender: string;
 }
 
 export class MatrixRestError extends Error {
@@ -114,6 +125,39 @@ function buildReactionSummary(
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 }
 
+function collectEdits(events: MatrixEvent[]) {
+  const editsByEventId = new Map<string, MatrixEditSummary>();
+
+  for (const event of events) {
+    const relation = event.content?.['m.relates_to'];
+    const newContent = event.content?.['m.new_content'];
+
+    if (
+      event.type !== 'm.room.message' ||
+      relation?.rel_type !== 'm.replace' ||
+      !relation.event_id ||
+      newContent?.msgtype !== 'm.text' ||
+      !newContent.body ||
+      !event.sender
+    ) {
+      continue;
+    }
+
+    const existingEdit = editsByEventId.get(relation.event_id);
+    const editedAt = event.origin_server_ts ?? 0;
+
+    if (!existingEdit || editedAt > existingEdit.editedAt) {
+      editsByEventId.set(relation.event_id, {
+        body: newContent.body,
+        editedAt,
+        sender: event.sender,
+      });
+    }
+  }
+
+  return editsByEventId;
+}
+
 export async function resolveRoomAlias(identity: MatrixLoginIdentity, alias: string) {
   const data = await matrixRequest<MatrixResolveAliasResponse>(
     identity,
@@ -144,6 +188,7 @@ export async function loadRecentMessages(identity: MatrixLoginIdentity, roomId: 
 
   const events = data.chunk ?? [];
   const reactionsByEventId = new Map<string, Map<string, Set<string>>>();
+  const editsByEventId = collectEdits(events);
 
   for (const event of events) {
     const relation = event.content?.['m.relates_to'];
@@ -167,15 +212,34 @@ export async function loadRecentMessages(identity: MatrixLoginIdentity, roomId: 
   }
 
   return events
-    .filter((event) => event.type === 'm.room.message' && event.content?.msgtype === 'm.text' && event.content.body && event.event_id)
-    .map<MatrixTextMessage>((event) => ({
-      body: event.content?.body ?? '',
-      eventId: event.event_id ?? '',
-      originServerTs: event.origin_server_ts ?? 0,
-      reactions: buildReactionSummary(reactionsByEventId, event.event_id ?? ''),
-      replyToEventId: event.content?.['m.relates_to']?.['m.in_reply_to']?.event_id,
-      sender: event.sender ?? 'unknown',
-    }))
+    .filter((event) => {
+      const relation = event.content?.['m.relates_to'];
+
+      return (
+        event.type === 'm.room.message' &&
+        event.content?.msgtype === 'm.text' &&
+        event.content.body &&
+        event.event_id &&
+        relation?.rel_type !== 'm.replace'
+      );
+    })
+    .map<MatrixTextMessage>((event) => {
+      const eventId = event.event_id ?? '';
+      const edit = editsByEventId.get(eventId);
+      const editBelongsToOriginalSender = Boolean(edit && edit.sender === event.sender);
+      const effectiveBody = editBelongsToOriginalSender && edit ? edit.body : event.content?.body ?? '';
+      const editedAt = editBelongsToOriginalSender && edit ? edit.editedAt : undefined;
+
+      return {
+        body: effectiveBody,
+        editedAt,
+        eventId,
+        originServerTs: event.origin_server_ts ?? 0,
+        reactions: buildReactionSummary(reactionsByEventId, eventId),
+        replyToEventId: event.content?.['m.relates_to']?.['m.in_reply_to']?.event_id,
+        sender: event.sender ?? 'unknown',
+      };
+    })
     .reverse();
 }
 
@@ -204,6 +268,30 @@ export async function sendTextMessage(identity: MatrixLoginIdentity, roomId: str
   );
 }
 
+export async function sendReplacementMessage(identity: MatrixLoginIdentity, roomId: string, targetEventId: string, body: string) {
+  const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  await matrixRequest<{ event_id: string }>(
+    identity,
+    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/m.room.message/${encodePathValue(txnId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        body: `* ${body}`,
+        msgtype: 'm.text',
+        'm.new_content': {
+          body,
+          msgtype: 'm.text',
+        },
+        'm.relates_to': {
+          rel_type: 'm.replace',
+          event_id: targetEventId,
+        },
+      }),
+    },
+  );
+}
+
 export async function sendReaction(identity: MatrixLoginIdentity, roomId: string, targetEventId: string, key: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -219,6 +307,19 @@ export async function sendReaction(identity: MatrixLoginIdentity, roomId: string
           key,
         },
       }),
+    },
+  );
+}
+
+export async function redactMessage(identity: MatrixLoginIdentity, roomId: string, eventId: string, reason: string) {
+  const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  await matrixRequest<{ event_id: string }>(
+    identity,
+    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/redact/${encodePathValue(eventId)}/${encodePathValue(txnId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
     },
   );
 }
