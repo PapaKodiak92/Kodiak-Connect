@@ -6,10 +6,19 @@ export interface MatrixReactionSummary {
   senders: string[];
 }
 
+export type MatrixMediaMessageType = 'm.image' | 'm.audio' | 'm.video' | 'm.file';
+
 export interface MatrixTextMessage {
   body: string;
   editedAt?: number;
   eventId: string;
+  fileName?: string;
+  info?: {
+    mimetype?: string;
+    size?: number;
+  };
+  mediaUrl?: string;
+  msgtype?: 'm.text' | MatrixMediaMessageType;
   originServerTs: number;
   reactions?: MatrixReactionSummary[];
   replyToEventId?: string;
@@ -28,12 +37,6 @@ export interface MatrixRoomMember {
 }
 
 export type MatrixPresenceState = 'online' | 'offline' | 'unavailable';
-
-interface MatrixPresenceResponse {
-  presence?: MatrixPresenceState;
-  status_msg?: string;
-}
-
 export type MatrixDirectRoomsByUserId = Record<string, string[]>;
 export type MatrixFriendResponseState = 'accept' | 'decline' | 'remove' | 'cancel';
 
@@ -93,6 +96,7 @@ interface MatrixJoinedMembersResponse {
 interface MatrixSyncResponse {
   next_batch?: string;
   rooms?: {
+    invite?: Record<string, { invite_state?: { events?: Array<{ sender?: string; state_key?: string; type?: string }> } }>;
     join?: Record<
       string,
       {
@@ -122,11 +126,17 @@ interface MatrixEvent {
     bio?: string;
     body?: string;
     created_at?: number;
+    filename?: string;
+    info?: {
+      mimetype?: string;
+      size?: number;
+    };
     msgtype?: string;
     requester_user_id?: string;
     response?: MatrixFriendResponseState;
     target_user_id?: string;
     updated_at?: number;
+    url?: string;
     'm.new_content'?: {
       body?: string;
       msgtype?: string;
@@ -165,6 +175,8 @@ export class MatrixRestError extends Error {
   }
 }
 
+const MEDIA_MSGTYPES = new Set(['m.image', 'm.audio', 'm.video', 'm.file']);
+
 function encodePathValue(value: string) {
   return encodeURIComponent(value);
 }
@@ -195,10 +207,7 @@ async function matrixRequest<T>(identity: MatrixLoginIdentity, path: string, ini
   return (await response.json()) as T;
 }
 
-function buildReactionSummary(
-  reactionsByEventId: Map<string, Map<string, Set<string>>>,
-  eventId: string,
-): MatrixReactionSummary[] {
+function buildReactionSummary(reactionsByEventId: Map<string, Map<string, Set<string>>>, eventId: string): MatrixReactionSummary[] {
   const reactionsForMessage = reactionsByEventId.get(eventId);
 
   if (!reactionsForMessage) {
@@ -233,8 +242,8 @@ function collectEdits(events: MatrixEvent[]) {
       continue;
     }
 
-    const existingEdit = editsByEventId.get(relation.event_id);
     const editedAt = event.origin_server_ts ?? 0;
+    const existingEdit = editsByEventId.get(relation.event_id);
 
     if (!existingEdit || editedAt > existingEdit.editedAt) {
       editsByEventId.set(relation.event_id, {
@@ -248,12 +257,17 @@ function collectEdits(events: MatrixEvent[]) {
   return editsByEventId;
 }
 
-function getMatrixMediaParts(mxcUrl?: string | null) {
-  if (!mxcUrl) {
-    return null;
-  }
+function isTransferNotice(body = '') {
+  return (
+    (body.includes('Open Transfers to preview/download') && (body.includes('Shared GIF') || body.includes('Shared image/GIF') || body.includes('Shared music/audio') || body.includes('Shared video') || body.includes('Shared file'))) ||
+    /^📁 Shared \d+ files/.test(body) ||
+    /^📎 Shared .+/.test(body) ||
+    /^🎞️ Shared GIF:/.test(body)
+  );
+}
 
-  if (!mxcUrl.startsWith('mxc://')) {
+function getMatrixMediaParts(mxcUrl?: string | null) {
+  if (!mxcUrl || !mxcUrl.startsWith('mxc://')) {
     return null;
   }
 
@@ -263,10 +277,7 @@ function getMatrixMediaParts(mxcUrl?: string | null) {
     return null;
   }
 
-  return {
-    mediaId,
-    serverName,
-  };
+  return { mediaId, serverName };
 }
 
 export function getMatrixMediaUrl(identity: MatrixLoginIdentity, mxcUrl?: string | null, width = 96, height = 96) {
@@ -316,6 +327,27 @@ function getMatrixMediaCandidateUrls(identity: MatrixLoginIdentity, mxcUrl?: str
   ];
 }
 
+export function getMatrixMediaDownloadUrl(identity: MatrixLoginIdentity, mxcUrl?: string | null) {
+  if (!mxcUrl) {
+    return null;
+  }
+
+  if (!mxcUrl.startsWith('mxc://')) {
+    return mxcUrl;
+  }
+
+  const parts = getMatrixMediaParts(mxcUrl);
+
+  if (!parts) {
+    return null;
+  }
+
+  const serverName = encodePathValue(parts.serverName);
+  const mediaId = encodePathValue(parts.mediaId);
+
+  return `${identity.baseUrl}/_matrix/client/v1/media/download/${serverName}/${mediaId}`;
+}
+
 export async function getAuthenticatedMatrixMediaObjectUrl(identity: MatrixLoginIdentity, mxcUrl?: string | null, width = 96, height = 96) {
   const mediaUrls = getMatrixMediaCandidateUrls(identity, mxcUrl, width, height);
 
@@ -333,16 +365,12 @@ export async function getAuthenticatedMatrixMediaObjectUrl(identity: MatrixLogin
     });
 
     if (response.ok) {
-      const avatarBlob = await response.blob();
-      return URL.createObjectURL(avatarBlob);
+      const mediaBlob = await response.blob();
+      return URL.createObjectURL(mediaBlob);
     }
 
     const matrixError = await readMatrixError(response);
-    lastError = new MatrixRestError(
-      matrixError.error || `Matrix media download failed at ${mediaUrl}.`,
-      response.status,
-      matrixError.errcode,
-    );
+    lastError = new MatrixRestError(matrixError.error || `Matrix media download failed at ${mediaUrl}.`, response.status, matrixError.errcode);
 
     if (![400, 404, 405].includes(response.status)) {
       break;
@@ -354,11 +382,7 @@ export async function getAuthenticatedMatrixMediaObjectUrl(identity: MatrixLogin
 
 export async function loadProfileAvatarUrl(identity: MatrixLoginIdentity, userId: string) {
   try {
-    const data = await matrixRequest<MatrixAvatarUrlResponse>(
-      identity,
-      `/_matrix/client/v3/profile/${encodePathValue(userId)}/avatar_url`,
-    );
-
+    const data = await matrixRequest<MatrixAvatarUrlResponse>(identity, `/_matrix/client/v3/profile/${encodePathValue(userId)}/avatar_url`);
     return data.avatar_url?.trim() || null;
   } catch (error) {
     if (error instanceof MatrixRestError && error.status === 404) {
@@ -370,14 +394,10 @@ export async function loadProfileAvatarUrl(identity: MatrixLoginIdentity, userId
 }
 
 export async function saveOwnAvatarUrl(identity: MatrixLoginIdentity, avatarUrl: string) {
-  await matrixRequest<Record<string, never>>(
-    identity,
-    `/_matrix/client/v3/profile/${encodePathValue(identity.userId)}/avatar_url`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ avatar_url: avatarUrl }),
-    },
-  );
+  await matrixRequest<Record<string, never>>(identity, `/_matrix/client/v3/profile/${encodePathValue(identity.userId)}/avatar_url`, {
+    method: 'PUT',
+    body: JSON.stringify({ avatar_url: avatarUrl }),
+  });
 }
 
 export async function uploadProfileAvatar(identity: MatrixLoginIdentity, file: File) {
@@ -405,11 +425,7 @@ export async function uploadProfileAvatar(identity: MatrixLoginIdentity, file: F
     }
 
     const matrixError = await readMatrixError(response);
-    lastError = new MatrixRestError(
-      matrixError.error || `Matrix avatar upload failed at ${uploadPath}.`,
-      response.status,
-      matrixError.errcode,
-    );
+    lastError = new MatrixRestError(matrixError.error || `Matrix avatar upload failed at ${uploadPath}.`, response.status, matrixError.errcode);
 
     if (![400, 404, 405].includes(response.status)) {
       break;
@@ -419,89 +435,40 @@ export async function uploadProfileAvatar(identity: MatrixLoginIdentity, file: F
   throw lastError ?? new MatrixRestError('Matrix avatar upload failed.');
 }
 
-const matrixPresenceCache = new Map<
-  string,
-  {
-    expiresAt: number;
-    nextAllowedAt: number;
-    state: MatrixPresenceState;
-  }
->();
-
 export async function loadUserPresence(identity: MatrixLoginIdentity, userId: string) {
-  // Matrix presence is too rate-limit prone on staging.
-  // Keep UI stable without calling /presence until Kodiak backend heartbeat owns this.
   return identity.userId === userId ? 'online' : 'offline';
 }
 
 export async function setOwnPresence(_identity: MatrixLoginIdentity, _presence: MatrixPresenceState) {
-  // No-op on Matrix staging to avoid 429 spam.
+  // Presence is owned by Kodiak backend heartbeat for now.
 }
-
 
 export async function sendFriendRequest(identity: MatrixLoginIdentity, roomId: string, targetUserId: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.request/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        created_at: Date.now(),
-        requester_user_id: identity.userId,
-        target_user_id: targetUserId,
-      }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.request/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ created_at: Date.now(), requester_user_id: identity.userId, target_user_id: targetUserId }),
+  });
 }
 
-export async function sendFriendResponse(
-  identity: MatrixLoginIdentity,
-  roomId: string,
-  requesterUserId: string,
-  response: MatrixFriendResponseState,
-) {
+export async function sendFriendResponse(identity: MatrixLoginIdentity, roomId: string, requesterUserId: string, response: MatrixFriendResponseState) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.response/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        created_at: Date.now(),
-        requester_user_id: requesterUserId,
-        response,
-        target_user_id: identity.userId,
-      }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.response/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ created_at: Date.now(), requester_user_id: requesterUserId, response, target_user_id: identity.userId }),
+  });
 }
 
 export async function sendFriendRequestCancellation(identity: MatrixLoginIdentity, roomId: string, targetUserId: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.response/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        created_at: Date.now(),
-        requester_user_id: identity.userId,
-        response: 'cancel',
-        target_user_id: targetUserId,
-      }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.response/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ created_at: Date.now(), requester_user_id: identity.userId, response: 'cancel', target_user_id: targetUserId }),
+  });
 }
 
 export async function loadRecentFriendEvents(identity: MatrixLoginIdentity, roomId: string, limit = 120) {
-  const data = await matrixRequest<MatrixMessagesResponse>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/messages?dir=b&limit=${limit}`,
-  );
+  const data = await matrixRequest<MatrixMessagesResponse>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/messages?dir=b&limit=${limit}`);
 
   return (data.chunk ?? [])
     .filter((event) => {
@@ -527,11 +494,7 @@ export async function loadRecentFriendEvents(identity: MatrixLoginIdentity, room
 
 export async function loadProfileDisplayName(identity: MatrixLoginIdentity, userId: string) {
   try {
-    const data = await matrixRequest<MatrixDisplayNameResponse>(
-      identity,
-      `/_matrix/client/v3/profile/${encodePathValue(userId)}/displayname`,
-    );
-
+    const data = await matrixRequest<MatrixDisplayNameResponse>(identity, `/_matrix/client/v3/profile/${encodePathValue(userId)}/displayname`);
     return data.displayname?.trim() || null;
   } catch (error) {
     if (error instanceof MatrixRestError && error.status === 404) {
@@ -543,47 +506,31 @@ export async function loadProfileDisplayName(identity: MatrixLoginIdentity, user
 }
 
 export async function saveOwnDisplayName(identity: MatrixLoginIdentity, displayName: string) {
-  await matrixRequest<Record<string, never>>(
-    identity,
-    `/_matrix/client/v3/profile/${encodePathValue(identity.userId)}/displayname`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ displayname: displayName }),
-    },
-  );
+  await matrixRequest<Record<string, never>>(identity, `/_matrix/client/v3/profile/${encodePathValue(identity.userId)}/displayname`, {
+    method: 'PUT',
+    body: JSON.stringify({ displayname: displayName }),
+  });
 }
 
 export async function resolveRoomAlias(identity: MatrixLoginIdentity, alias: string) {
-  const data = await matrixRequest<MatrixResolveAliasResponse>(
-    identity,
-    `/_matrix/client/v3/directory/room/${encodePathValue(alias)}`,
-  );
-
+  const data = await matrixRequest<MatrixResolveAliasResponse>(identity, `/_matrix/client/v3/directory/room/${encodePathValue(alias)}`);
   return data.room_id;
 }
 
 export async function joinRoomByAlias(identity: MatrixLoginIdentity, alias: string) {
-  const data = await matrixRequest<MatrixJoinRoomResponse>(
-    identity,
-    `/_matrix/client/v3/join/${encodePathValue(alias)}`,
-    {
-      method: 'POST',
-      body: JSON.stringify({}),
-    },
-  );
+  const data = await matrixRequest<MatrixJoinRoomResponse>(identity, `/_matrix/client/v3/join/${encodePathValue(alias)}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 
   return data.room_id;
 }
 
 export async function joinRoomById(identity: MatrixLoginIdentity, roomId: string) {
-  const data = await matrixRequest<MatrixJoinRoomResponse>(
-    identity,
-    `/_matrix/client/v3/join/${encodePathValue(roomId)}`,
-    {
-      method: 'POST',
-      body: JSON.stringify({}),
-    },
-  );
+  const data = await matrixRequest<MatrixJoinRoomResponse>(identity, `/_matrix/client/v3/join/${encodePathValue(roomId)}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 
   return data.room_id;
 }
@@ -591,23 +538,14 @@ export async function joinRoomById(identity: MatrixLoginIdentity, roomId: string
 export async function createDirectMessageRoom(identity: MatrixLoginIdentity, targetUserId: string, displayName: string) {
   const data = await matrixRequest<MatrixCreateRoomResponse>(identity, '/_matrix/client/v3/createRoom', {
     method: 'POST',
-    body: JSON.stringify({
-      invite: [targetUserId],
-      is_direct: true,
-      name: displayName,
-      preset: 'trusted_private_chat',
-      visibility: 'private',
-    }),
+    body: JSON.stringify({ invite: [targetUserId], is_direct: true, name: displayName, preset: 'trusted_private_chat', visibility: 'private' }),
   });
 
   return data.room_id;
 }
 
 export async function loadRoomMembers(identity: MatrixLoginIdentity, roomId: string) {
-  const data = await matrixRequest<MatrixJoinedMembersResponse>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/joined_members`,
-  );
+  const data = await matrixRequest<MatrixJoinedMembersResponse>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/joined_members`);
 
   return Object.entries(data.joined ?? {}).map<MatrixRoomMember>(([userId, member]) => ({
     avatarUrl: member.avatar_url,
@@ -617,11 +555,7 @@ export async function loadRoomMembers(identity: MatrixLoginIdentity, roomId: str
 }
 
 export async function loadRecentMessages(identity: MatrixLoginIdentity, roomId: string, limit = 80) {
-  const data = await matrixRequest<MatrixMessagesResponse>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/messages?dir=b&limit=${limit}`,
-  );
-
+  const data = await matrixRequest<MatrixMessagesResponse>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/messages?dir=b&limit=${limit}`);
   const events = data.chunk ?? [];
   const reactionsByEventId = new Map<string, Map<string, Set<string>>>();
   const editsByEventId = collectEdits(events);
@@ -629,13 +563,7 @@ export async function loadRecentMessages(identity: MatrixLoginIdentity, roomId: 
   for (const event of events) {
     const relation = event.content?.['m.relates_to'];
 
-    if (
-      event.type !== 'm.reaction' ||
-      relation?.rel_type !== 'm.annotation' ||
-      !relation.event_id ||
-      !relation.key ||
-      !event.sender
-    ) {
+    if (event.type !== 'm.reaction' || relation?.rel_type !== 'm.annotation' || !relation.event_id || !relation.key || !event.sender) {
       continue;
     }
 
@@ -650,26 +578,35 @@ export async function loadRecentMessages(identity: MatrixLoginIdentity, roomId: 
   return events
     .filter((event) => {
       const relation = event.content?.['m.relates_to'];
+      const msgtype = event.content?.msgtype;
 
-      return (
-        event.type === 'm.room.message' &&
-        event.content?.msgtype === 'm.text' &&
-        event.content.body &&
-        event.event_id &&
-        relation?.rel_type !== 'm.replace'
-      );
+      if (event.type !== 'm.room.message' || !event.event_id || !event.sender || relation?.rel_type === 'm.replace') {
+        return false;
+      }
+
+      if (msgtype === 'm.text') {
+        return Boolean(event.content?.body) && !isTransferNotice(event.content?.body);
+      }
+
+      return Boolean(msgtype && MEDIA_MSGTYPES.has(msgtype) && event.content?.url);
     })
     .map<MatrixTextMessage>((event) => {
       const eventId = event.event_id ?? '';
+      const msgtype = event.content?.msgtype ?? 'm.text';
+      const isMedia = MEDIA_MSGTYPES.has(msgtype);
       const edit = editsByEventId.get(eventId);
       const editBelongsToOriginalSender = Boolean(edit && edit.sender === event.sender);
       const effectiveBody = editBelongsToOriginalSender && edit ? edit.body : event.content?.body ?? '';
       const editedAt = editBelongsToOriginalSender && edit ? edit.editedAt : undefined;
 
       return {
-        body: effectiveBody,
+        body: isMedia ? `KC_MEDIA::${JSON.stringify({ body: effectiveBody, info: event.content?.info ?? {}, msgtype, url: event.content?.url ?? '' })}` : effectiveBody,
         editedAt,
         eventId,
+        fileName: event.content?.filename || effectiveBody,
+        info: event.content?.info,
+        mediaUrl: event.content?.url,
+        msgtype: msgtype as MatrixTextMessage['msgtype'],
         originServerTs: event.origin_server_ts ?? 0,
         reactions: buildReactionSummary(reactionsByEventId, eventId),
         replyToEventId: event.content?.['m.relates_to']?.['m.in_reply_to']?.event_id,
@@ -680,9 +617,7 @@ export async function loadRecentMessages(identity: MatrixLoginIdentity, roomId: 
 }
 
 export async function loadTypingUsers(identity: MatrixLoginIdentity, roomId: string, since?: string): Promise<MatrixTypingState> {
-  const syncPath = since
-    ? `/_matrix/client/v3/sync?timeout=0&since=${encodePathValue(since)}`
-    : '/_matrix/client/v3/sync?timeout=0';
+  const syncPath = since ? `/_matrix/client/v3/sync?timeout=0&since=${encodePathValue(since)}` : '/_matrix/client/v3/sync?timeout=0';
   const data = await matrixRequest<MatrixSyncResponse>(identity, syncPath);
   const roomEvents = data.rooms?.join?.[roomId]?.ephemeral?.events ?? [];
   const typingEvent = [...roomEvents].reverse().find((event) => event.type === 'm.typing');
@@ -695,10 +630,7 @@ export async function loadTypingUsers(identity: MatrixLoginIdentity, roomId: str
 
 export async function loadDirectMessageRooms(identity: MatrixLoginIdentity) {
   try {
-    return await matrixRequest<MatrixDirectRoomsByUserId>(
-      identity,
-      `/_matrix/client/v3/user/${encodePathValue(identity.userId)}/account_data/m.direct`,
-    );
+    return await matrixRequest<MatrixDirectRoomsByUserId>(identity, `/_matrix/client/v3/user/${encodePathValue(identity.userId)}/account_data/m.direct`);
   } catch (error) {
     if (error instanceof MatrixRestError && error.status === 404) {
       return {};
@@ -713,17 +645,10 @@ export async function saveDirectMessageRoom(identity: MatrixLoginIdentity, targe
   const existingRooms = currentDirectRooms[targetUserId] ?? [];
   const nextRooms = existingRooms.includes(roomId) ? existingRooms : [roomId, ...existingRooms];
 
-  await matrixRequest<Record<string, never>>(
-    identity,
-    `/_matrix/client/v3/user/${encodePathValue(identity.userId)}/account_data/m.direct`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        ...currentDirectRooms,
-        [targetUserId]: nextRooms,
-      }),
-    },
-  );
+  await matrixRequest<Record<string, never>>(identity, `/_matrix/client/v3/user/${encodePathValue(identity.userId)}/account_data/m.direct`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...currentDirectRooms, [targetUserId]: nextRooms }),
+  });
 }
 
 export async function findDirectMessageRoom(identity: MatrixLoginIdentity, targetUserId: string) {
@@ -738,13 +663,10 @@ export async function findDirectMessageRooms(identity: MatrixLoginIdentity, targ
 
 export async function loadDirectMessageInviteRooms(identity: MatrixLoginIdentity, targetUserId: string) {
   const data = await matrixRequest<MatrixSyncResponse>(identity, '/_matrix/client/v3/sync?timeout=0');
-  const inviteRooms = ((data.rooms as { invite?: Record<string, { invite_state?: { events?: Array<{ sender?: string; state_key?: string; type?: string }> } }> } | undefined)
-    ?.invite ?? {});
+  const inviteRooms = data.rooms?.invite ?? {};
 
   return Object.entries(inviteRooms)
-    .filter(([, room]) =>
-      room.invite_state?.events?.some((event) => event.sender === targetUserId || event.state_key === targetUserId),
-    )
+    .filter(([, room]) => room.invite_state?.events?.some((event) => event.sender === targetUserId || event.state_key === targetUserId))
     .map(([roomId]) => roomId);
 }
 
@@ -752,7 +674,6 @@ export async function resolveDirectMessageRoom(identity: MatrixLoginIdentity, ta
   const directRoomIds = await findDirectMessageRooms(identity, targetUserId);
   const inviteRoomIds = await loadDirectMessageInviteRooms(identity, targetUserId);
   const candidateRoomIds = [...new Set([...inviteRoomIds, ...directRoomIds, ...(cachedRoomId ? [cachedRoomId] : [])])];
-
   let bestRoom: { latestTargetTs: number; latestTs: number; roomId: string } | null = null;
 
   for (const candidateRoomId of candidateRoomIds) {
@@ -761,22 +682,17 @@ export async function resolveDirectMessageRoom(identity: MatrixLoginIdentity, ta
       const recentMessages = await loadRecentMessages(identity, joinedRoomId, 25);
       const latestMessage = recentMessages.at(-1);
       const latestTargetMessage = [...recentMessages].reverse().find((message) => message.sender === targetUserId);
-
       const candidate = {
         latestTargetTs: latestTargetMessage?.originServerTs ?? 0,
         latestTs: latestMessage?.originServerTs ?? 0,
         roomId: joinedRoomId,
       };
 
-      if (
-        !bestRoom ||
-        candidate.latestTargetTs > bestRoom.latestTargetTs ||
-        (candidate.latestTargetTs === bestRoom.latestTargetTs && candidate.latestTs > bestRoom.latestTs)
-      ) {
+      if (!bestRoom || candidate.latestTargetTs > bestRoom.latestTargetTs || (candidate.latestTargetTs === bestRoom.latestTargetTs && candidate.latestTs > bestRoom.latestTs)) {
         bestRoom = candidate;
       }
     } catch {
-      // Ignore stale/forbidden candidate rooms and keep trying.
+      // Ignore stale/forbidden candidate rooms.
     }
   }
 
@@ -785,26 +701,14 @@ export async function resolveDirectMessageRoom(identity: MatrixLoginIdentity, ta
 
 export async function sendProfileBio(identity: MatrixLoginIdentity, roomId: string, bio: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.profile.bio/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        bio,
-        updated_at: Date.now(),
-      }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.profile.bio/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ bio, updated_at: Date.now() }),
+  });
 }
 
 export async function loadRecentProfileBios(identity: MatrixLoginIdentity, roomId: string, limit = 120) {
-  const data = await matrixRequest<MatrixMessagesResponse>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/messages?dir=b&limit=${limit}`,
-  );
-
+  const data = await matrixRequest<MatrixMessagesResponse>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/messages?dir=b&limit=${limit}`);
   const biosByUserId = new Map<string, { bio: string; updatedAt: number }>();
 
   for (const event of data.chunk ?? []) {
@@ -816,10 +720,7 @@ export async function loadRecentProfileBios(identity: MatrixLoginIdentity, roomI
     const existingBio = biosByUserId.get(event.sender);
 
     if (!existingBio || updatedAt > existingBio.updatedAt) {
-      biosByUserId.set(event.sender, {
-        bio: event.content.bio,
-        updatedAt,
-      });
+      biosByUserId.set(event.sender, { bio: event.content.bio, updatedAt });
     }
   }
 
@@ -828,92 +729,54 @@ export async function loadRecentProfileBios(identity: MatrixLoginIdentity, roomI
 
 export async function sendTextMessage(identity: MatrixLoginIdentity, roomId: string, body: string, replyToEventId?: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/m.room.message/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        body,
-        msgtype: 'm.text',
-        ...(replyToEventId
-          ? {
-              'm.relates_to': {
-                'm.in_reply_to': {
-                  event_id: replyToEventId,
-                },
-              },
-            }
-          : {}),
-      }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/m.room.message/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      body,
+      msgtype: 'm.text',
+      ...(replyToEventId
+        ? {
+            'm.relates_to': {
+              'm.in_reply_to': { event_id: replyToEventId },
+            },
+          }
+        : {}),
+    }),
+  });
 }
 
 export async function sendReplacementMessage(identity: MatrixLoginIdentity, roomId: string, targetEventId: string, body: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/m.room.message/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        body: `* ${body}`,
-        msgtype: 'm.text',
-        'm.new_content': {
-          body,
-          msgtype: 'm.text',
-        },
-        'm.relates_to': {
-          rel_type: 'm.replace',
-          event_id: targetEventId,
-        },
-      }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/m.room.message/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      body: `* ${body}`,
+      msgtype: 'm.text',
+      'm.new_content': { body, msgtype: 'm.text' },
+      'm.relates_to': { rel_type: 'm.replace', event_id: targetEventId },
+    }),
+  });
 }
 
 export async function sendReaction(identity: MatrixLoginIdentity, roomId: string, targetEventId: string, key: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/m.reaction/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        'm.relates_to': {
-          rel_type: 'm.annotation',
-          event_id: targetEventId,
-          key,
-        },
-      }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/m.reaction/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ 'm.relates_to': { rel_type: 'm.annotation', event_id: targetEventId, key } }),
+  });
 }
 
 export async function sendTypingState(identity: MatrixLoginIdentity, roomId: string, isTyping: boolean, timeout = 5000) {
-  await matrixRequest<Record<string, never>>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/typing/${encodePathValue(identity.userId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify(isTyping ? { typing: true, timeout } : { typing: false }),
-    },
-  );
+  await matrixRequest<Record<string, never>>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/typing/${encodePathValue(identity.userId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(isTyping ? { typing: true, timeout } : { typing: false }),
+  });
 }
 
 export async function redactMessage(identity: MatrixLoginIdentity, roomId: string, eventId: string, reason: string) {
   const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  await matrixRequest<{ event_id: string }>(
-    identity,
-    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/redact/${encodePathValue(eventId)}/${encodePathValue(txnId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ reason }),
-    },
-  );
+  await matrixRequest<{ event_id: string }>(identity, `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/redact/${encodePathValue(eventId)}/${encodePathValue(txnId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ reason }),
+  });
 }
