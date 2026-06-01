@@ -32,11 +32,17 @@ import {
 import { playKodiakSound } from '../audio/kodiakSounds';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
+type FriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
+
 interface MatrixChannelPanelProps {
   activeChannel: WorkspaceChannel;
   activeSpace: WorkspaceSpace;
   identity: MatrixLoginIdentity;
+  friendStatusByUserId?: Record<string, FriendStatus>;
   onOpenDirectMessage?: (userId: string, displayName: string) => void;
+  onSendFriendRequest?: (userId: string, displayName: string) => Promise<void> | void;
+  onAcceptFriendRequest?: (userId: string) => Promise<void> | void;
+  onDeclineFriendRequest?: (userId: string) => Promise<void> | void;
 }
 
 interface MentionSearch {
@@ -385,7 +391,11 @@ export function MatrixChannelPanel({
   activeChannel,
   activeSpace,
   identity,
+  friendStatusByUserId = {},
   onOpenDirectMessage,
+  onSendFriendRequest,
+  onAcceptFriendRequest,
+  onDeclineFriendRequest,
 }: MatrixChannelPanelProps) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrixTextMessage[]>([]);
@@ -410,6 +420,7 @@ export function MatrixChannelPanel({
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsErrorText, setSettingsErrorText] = useState<string | null>(null);
+  const [friendActionUserId, setFriendActionUserId] = useState<string | null>(null);
   const [areMessageSoundsEnabled, setAreMessageSoundsEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_MESSAGES') !== 'false');
   const [isSentSoundEnabled, setIsSentSoundEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_SENT') !== 'false');
   const [isReceivedSoundEnabled, setIsReceivedSoundEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_RECEIVED') !== 'false');
@@ -444,6 +455,22 @@ export function MatrixChannelPanel({
   function getKnownAvatarUrl(userId: string) {
     return avatarUrlsByUserId[userId] || null;
   }
+
+  function getFriendStatus(userId: string) {
+    return friendStatusByUserId[userId] ?? 'none';
+  }
+
+  const incomingFriendUserIds = Object.entries(friendStatusByUserId)
+    .filter(([, status]) => status === 'incoming')
+    .map(([userId]) => userId);
+
+  const outgoingFriendUserIds = Object.entries(friendStatusByUserId)
+    .filter(([, status]) => status === 'outgoing')
+    .map(([userId]) => userId);
+
+  const friendUserIds = Object.entries(friendStatusByUserId)
+    .filter(([, status]) => status === 'friends')
+    .map(([userId]) => userId);
 
   function getMemberRoleLabel(userId: string) {
     if (userId === identity.userId) {
@@ -1287,6 +1314,60 @@ export function MatrixChannelPanel({
     }
   }
 
+  async function handleSendFriendRequestClick(userId: string) {
+    if (!onSendFriendRequest) {
+      return;
+    }
+
+    setFriendActionUserId(userId);
+    setErrorText(null);
+
+    try {
+      await onSendFriendRequest(userId, getKnownDisplayName(userId));
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to send friend request', error);
+      setErrorText('Could not send friend request. Try again.');
+    } finally {
+      setFriendActionUserId(null);
+    }
+  }
+
+  async function handleAcceptFriendRequestClick(userId: string) {
+    if (!onAcceptFriendRequest) {
+      return;
+    }
+
+    setFriendActionUserId(userId);
+    setErrorText(null);
+
+    try {
+      await onAcceptFriendRequest(userId);
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to accept friend request', error);
+      setErrorText('Could not accept friend request. Try again.');
+    } finally {
+      setFriendActionUserId(null);
+    }
+  }
+
+  async function handleDeclineFriendRequestClick(userId: string) {
+    if (!onDeclineFriendRequest) {
+      return;
+    }
+
+    setFriendActionUserId(userId);
+    setErrorText(null);
+
+    try {
+      await onDeclineFriendRequest(userId);
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to decline friend request', error);
+      setErrorText('Could not decline friend request. Try again.');
+    } finally {
+      setFriendActionUserId(null);
+    }
+  }
+
   function handleAvatarFileChange(file: File | null) {
     setSettingsErrorText(null);
 
@@ -1812,7 +1893,26 @@ export function MatrixChannelPanel({
                   Message
                 </button>
               ) : null}
-              <button type="button" disabled>Add Friend Soon</button>
+              {openProfileUserId !== identity.userId ? (
+                getFriendStatus(openProfileUserId) === 'friends' ? (
+                  <button type="button" disabled>Friends</button>
+                ) : getFriendStatus(openProfileUserId) === 'outgoing' ? (
+                  <button type="button" disabled>Request sent</button>
+                ) : getFriendStatus(openProfileUserId) === 'incoming' ? (
+                  <>
+                    <button type="button" disabled={friendActionUserId === openProfileUserId} onClick={() => void handleAcceptFriendRequestClick(openProfileUserId)}>
+                      {friendActionUserId === openProfileUserId ? 'Accepting...' : 'Accept'}
+                    </button>
+                    <button type="button" disabled={friendActionUserId === openProfileUserId} onClick={() => void handleDeclineFriendRequestClick(openProfileUserId)}>
+                      Decline
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" disabled={friendActionUserId === openProfileUserId || !onSendFriendRequest} onClick={() => void handleSendFriendRequestClick(openProfileUserId)}>
+                    {friendActionUserId === openProfileUserId ? 'Sending...' : 'Add Friend'}
+                  </button>
+                )
+              ) : null}
               <button type="button" disabled>Block Soon</button>
               <button type="button" className="kodiak-profile-card__danger" disabled>Report Soon</button>
             </div>
@@ -1823,6 +1923,14 @@ export function MatrixChannelPanel({
       {isSettingsOpen ? (
         <div className="kodiak-modal-backdrop" role="presentation">
           <form className="kodiak-confirm-modal kodiak-settings-modal" role="dialog" aria-modal="true" aria-labelledby="account-settings-title" onSubmit={handleSaveAccountSettings}>
+            <button
+              type="button"
+              className="kodiak-settings-modal__close"
+              aria-label="Close profile settings"
+              onClick={() => setIsSettingsOpen(false)}
+            >
+              ×
+            </button>
             <div className="kodiak-confirm-modal__header">
               <p className="eyebrow eyebrow--ember">Account settings</p>
               <h2 id="account-settings-title">Profile settings</h2>
@@ -1921,6 +2029,58 @@ export function MatrixChannelPanel({
                 />
                 <span>Notification sound</span>
               </label>
+            </div>
+
+            <div className="kodiak-friend-settings">
+              <strong>Friend Center</strong>
+
+              {incomingFriendUserIds.length ? (
+                <div className="kodiak-friend-settings__group">
+                  <span>Incoming</span>
+                  {incomingFriendUserIds.map((userId) => (
+                    <div key={userId} className="kodiak-friend-request-row">
+                      {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
+                      <strong>{getKnownDisplayName(userId)}</strong>
+                      <button type="button" disabled={friendActionUserId === userId} onClick={() => void handleAcceptFriendRequestClick(userId)}>
+                        Accept
+                      </button>
+                      <button type="button" disabled={friendActionUserId === userId} onClick={() => void handleDeclineFriendRequestClick(userId)}>
+                        Decline
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {outgoingFriendUserIds.length ? (
+                <div className="kodiak-friend-settings__group">
+                  <span>Outgoing</span>
+                  {outgoingFriendUserIds.map((userId) => (
+                    <div key={userId} className="kodiak-friend-request-row kodiak-friend-request-row--passive">
+                      {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
+                      <strong>{getKnownDisplayName(userId)}</strong>
+                      <em>Pending</em>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {friendUserIds.length ? (
+                <div className="kodiak-friend-settings__group">
+                  <span>Friends</span>
+                  {friendUserIds.map((userId) => (
+                    <div key={userId} className="kodiak-friend-request-row kodiak-friend-request-row--passive">
+                      {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
+                      <strong>{getKnownDisplayName(userId)}</strong>
+                      <em>Friend</em>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {!incomingFriendUserIds.length && !outgoingFriendUserIds.length && !friendUserIds.length ? (
+                <p>No friend requests yet.</p>
+              ) : null}
             </div>
 
             {settingsErrorText ? <p className="kodiak-settings-error">{settingsErrorText}</p> : null}

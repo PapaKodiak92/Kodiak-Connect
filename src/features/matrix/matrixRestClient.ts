@@ -35,6 +35,17 @@ interface MatrixPresenceResponse {
 }
 
 export type MatrixDirectRoomsByUserId = Record<string, string[]>;
+export type MatrixFriendResponseState = 'accept' | 'decline';
+
+export interface MatrixFriendEvent {
+  createdAt: number;
+  eventId: string;
+  requesterUserId: string;
+  response?: MatrixFriendResponseState;
+  sender: string;
+  targetUserId: string;
+  type: 'request' | 'response';
+}
 
 interface MatrixErrorResponse {
   errcode?: string;
@@ -95,6 +106,12 @@ interface MatrixSyncResponse {
 
 interface MatrixEphemeralEvent {
   content?: {
+    bio?: string;
+    created_at?: number;
+    requester_user_id?: string;
+    response?: MatrixFriendResponseState;
+    target_user_id?: string;
+    updated_at?: number;
     user_ids?: string[];
   };
   type?: string;
@@ -104,7 +121,11 @@ interface MatrixEvent {
   content?: {
     bio?: string;
     body?: string;
+    created_at?: number;
     msgtype?: string;
+    requester_user_id?: string;
+    response?: MatrixFriendResponseState;
+    target_user_id?: string;
     updated_at?: number;
     'm.new_content'?: {
       body?: string;
@@ -424,6 +445,74 @@ export async function setOwnPresence(identity: MatrixLoginIdentity, presence: Ma
   } catch {
     // Presence can be disabled/limited on some homeserver configs. Do not block chat.
   }
+}
+
+export async function sendFriendRequest(identity: MatrixLoginIdentity, roomId: string, targetUserId: string) {
+  const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  await matrixRequest<{ event_id: string }>(
+    identity,
+    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.request/${encodePathValue(txnId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        created_at: Date.now(),
+        requester_user_id: identity.userId,
+        target_user_id: targetUserId,
+      }),
+    },
+  );
+}
+
+export async function sendFriendResponse(
+  identity: MatrixLoginIdentity,
+  roomId: string,
+  requesterUserId: string,
+  response: MatrixFriendResponseState,
+) {
+  const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  await matrixRequest<{ event_id: string }>(
+    identity,
+    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/send/com.kodiak.friend.response/${encodePathValue(txnId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        created_at: Date.now(),
+        requester_user_id: requesterUserId,
+        response,
+        target_user_id: identity.userId,
+      }),
+    },
+  );
+}
+
+export async function loadRecentFriendEvents(identity: MatrixLoginIdentity, roomId: string, limit = 120) {
+  const data = await matrixRequest<MatrixMessagesResponse>(
+    identity,
+    `/_matrix/client/v3/rooms/${encodePathValue(roomId)}/messages?dir=b&limit=${limit}`,
+  );
+
+  return (data.chunk ?? [])
+    .filter((event) => {
+      return (
+        (event.type === 'com.kodiak.friend.request' || event.type === 'com.kodiak.friend.response') &&
+        event.event_id &&
+        event.sender &&
+        event.content?.requester_user_id &&
+        event.content?.target_user_id
+      );
+    })
+    .map<MatrixFriendEvent>((event) => ({
+      createdAt: event.content?.created_at ?? event.origin_server_ts ?? 0,
+      eventId: event.event_id ?? '',
+      requesterUserId: event.content?.requester_user_id ?? '',
+      response: event.content?.response,
+      sender: event.sender ?? '',
+      targetUserId: event.content?.target_user_id ?? '',
+      type: event.type === 'com.kodiak.friend.response' ? 'response' : 'request',
+    }))
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function loadProfileDisplayName(identity: MatrixLoginIdentity, userId: string) {

@@ -1445,3 +1445,226 @@
 .kodiak-sound-settings label:has(input:disabled) {
   opacity: 0.45;
 }
+
+
+.kodiak-friend-settings {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.36);
+  padding: 0.85rem;
+}
+
+.kodiak-friend-settings > strong {
+  color: #fed7aa;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.kodiak-friend-settings > p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.84rem;
+}
+
+.kodiak-friend-settings__group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.kodiak-friend-settings__group > span {
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.kodiak-friend-request-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.44);
+  padding: 0.55rem;
+}
+
+.kodiak-friend-request-row strong {
+  overflow: hidden;
+  color: #fff7ed;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodiak-friend-request-row button {
+  border: 1px solid rgba(251, 146, 60, 0.22);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.58);
+  color: #fed7aa;
+  font-size: 0.76rem;
+  font-weight: 900;
+  padding: 0.44rem 0.62rem;
+}
+
+.kodiak-friend-request-row button:hover:not(:disabled),
+.kodiak-friend-request-row button:focus-visible:not(:disabled) {
+  border-color: rgba(251, 146, 60, 0.62);
+  background: rgba(251, 146, 60, 0.12);
+}
+
+.kodiak-friend-request-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.kodiak-friend-request-row em {
+  grid-column: 3 / -1;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.kodiak-friend-request-row--passive {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+
+/* Settings modal viewport safety */
+.kodiak-modal-backdrop {
+  align-items: flex-start;
+  overflow: auto;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.kodiak-settings-modal {
+  position: relative;
+  width: min(32rem, calc(100vw - 1.5rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding-bottom: 0;
+  scrollbar-width: thin;
+}
+
+.kodiak-settings-modal__close {
+  position: sticky;
+  top: 0;
+  float: right;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  margin: -0.35rem -0.35rem 0.25rem 0.5rem;
+  border: 1px solid rgba(251, 146, 60, 0.24);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.88);
+  color: #fed7aa;
+  cursor: pointer;
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.kodiak-settings-modal__close:hover,
+.kodiak-settings-modal__close:focus-visible {
+  border-color: rgba(251, 146, 60, 0.68);
+  background: rgba(251, 146, 60, 0.12);
+  outline: none;
+}
+
+.kodiak-settings-modal .kodiak-confirm-modal__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 1rem -1.25rem 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background:
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.98) 28%),
+    rgba(15, 23, 42, 0.98);
+  padding: 0.95rem 1.25rem 1.1rem;
+  backdrop-filter: blur(14px);
+}
+
+@media (max-height: 760px) {
+  .kodiak-settings-modal {
+    max-height: calc(100vh - 1rem);
+  }
+
+  .kodiak-avatar-setting {
+    padding: 0.65rem;
+  }
+
+  .kodiak-settings-field textarea {
+    min-height: 4.25rem;
+  }
+}
+
+
+/* Repair profile settings modal scroll/close behavior */
+.kodiak-modal-backdrop {
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: hidden !important;
+  padding: 1rem !important;
+}
+
+.kodiak-settings-modal {
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: min(32rem, calc(100vw - 2rem)) !important;
+  max-height: calc(100dvh - 2rem) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 1.25rem !important;
+  scrollbar-gutter: stable;
+}
+
+.kodiak-settings-modal__close {
+  position: absolute !important;
+  top: 0.85rem !important;
+  right: 0.85rem !important;
+  float: none !important;
+  margin: 0 !important;
+  z-index: 10 !important;
+  width: 2rem !important;
+  height: 2rem !important;
+  border: 1px solid rgba(251, 146, 60, 0.26) !important;
+  border-radius: 999px !important;
+  background: rgba(2, 6, 23, 0.92) !important;
+  color: #fed7aa !important;
+  line-height: 1 !important;
+  transform: none !important;
+}
+
+.kodiak-settings-modal .kodiak-confirm-modal__header {
+  padding-right: 2.25rem;
+}
+
+.kodiak-settings-modal .kodiak-confirm-modal__actions {
+  position: sticky !important;
+  bottom: -1.25rem !important;
+  z-index: 5 !important;
+  margin: 1rem -1.25rem -1.25rem !important;
+  border-top: 1px solid rgba(148, 163, 184, 0.12) !important;
+  background:
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.72), rgba(15, 23, 42, 0.98) 36%),
+    rgba(15, 23, 42, 0.98) !important;
+  padding: 0.95rem 1.25rem 1.1rem !important;
+  backdrop-filter: blur(14px);
+}
+
+.kodiak-settings-modal * {
+  box-sizing: border-box;
+}
+
+@media (max-height: 760px) {
+  .kodiak-settings-modal {
+    max-height: calc(100dvh - 1rem) !important;
+  }
+}
