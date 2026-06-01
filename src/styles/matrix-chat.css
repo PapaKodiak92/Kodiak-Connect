@@ -328,3 +328,10 @@
   font-size: 1rem;
   padding: 0.38rem 0.48rem;
 }
+
+
+.matrix-reactions button.matrix-reaction--mine {
+  border-color: rgba(251, 146, 60, 0.72);
+  background: rgba(67, 20, 7, 0.54);
+  box-shadow: 0 0 16px rgba(251, 146, 60, 0.1);
+}

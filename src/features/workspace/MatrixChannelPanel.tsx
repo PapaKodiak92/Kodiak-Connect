@@ -237,6 +237,10 @@ function applyMentionSuggestion(draftMessage: string, search: MentionSearch | nu
   return `${draftMessage.slice(0, search.startIndex)}@${suggestion.localpart} `;
 }
 
+function hasUserReacted(message: MatrixTextMessage, reactionKey: string, userId: string) {
+  return message.reactions?.some((reaction) => reaction.key === reactionKey && reaction.senders.includes(userId)) ?? false;
+}
+
 function renderMessageTextWithMentions(body: string, currentUserLocalpart: string): ReactNode[] {
   const renderedParts: ReactNode[] = [];
   let lastIndex = 0;
@@ -424,7 +428,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   }
 
   async function handleReactToMessage(message: MatrixTextMessage, reactionKey: string) {
-    if (!roomId || !canPost) {
+    if (!roomId || !canPost || hasUserReacted(message, reactionKey, identity.userId)) {
       return;
     }
 
@@ -531,6 +535,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
                           <button
                             key={reaction.key}
                             type="button"
+                            className={hasUserReacted(message, reaction.key, identity.userId) ? 'matrix-reaction--mine' : undefined}
                             onClick={() => void handleReactToMessage(message, reaction.key)}
                             title={reaction.senders.map(getDisplayName).join(', ')}
                           >
