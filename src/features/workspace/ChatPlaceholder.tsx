@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
-import { loadKodiakReports, type KodiakReport } from '../backend/kodiakApiClient';
+import {
+  addKodiakReportNote,
+  loadKodiakReports,
+  replyToKodiakReport,
+  updateKodiakReportStatus,
+  type KodiakReport,
+  type KodiakReportAction,
+  type KodiakReportStatus,
+} from '../backend/kodiakApiClient';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 interface ChatPlaceholderProps {
@@ -10,6 +18,8 @@ interface ChatPlaceholderProps {
 }
 
 const PLATFORM_MODERATOR_IDS = ['@papakodiak:v2.kodiak-connect.com'];
+
+type ReportComposerMode = 'reply' | 'note' | 'close' | 'dismiss' | 'reopen';
 
 function getDisplayName(userId: string) {
   const withoutPrefix = userId.startsWith('@') ? userId.slice(1) : userId;
@@ -29,7 +39,7 @@ function formatReportDate(timestamp: number) {
 
 function getReportStatusLabel(status: KodiakReport['status']) {
   if (status === 'reviewed') {
-    return 'Reviewed';
+    return 'Closed';
   }
 
   if (status === 'dismissed') {
@@ -46,8 +56,65 @@ function getReportCategoryLabel(category: KodiakReport['category']) {
     .join(' ');
 }
 
+function getActionLabel(action: KodiakReportAction) {
+  if (action.type === 'reply') {
+    return 'Moderator reply';
+  }
+
+  if (action.type === 'note') {
+    return 'Private note';
+  }
+
+  const nextStatus = action.toStatus ? getReportStatusLabel(action.toStatus) : 'Updated';
+  return `Status: ${nextStatus}`;
+}
+
 function isPlatformModerator(userId: string) {
   return PLATFORM_MODERATOR_IDS.includes(userId);
+}
+
+function getComposerPlaceholder(mode: ReportComposerMode) {
+  if (mode === 'reply') {
+    return 'Write a response visible to the reporter...';
+  }
+
+  if (mode === 'note') {
+    return 'Add an internal moderator note...';
+  }
+
+  if (mode === 'close') {
+    return 'Optional closing note visible to the reporter...';
+  }
+
+  if (mode === 'dismiss') {
+    return 'Optional dismissal reason visible to the reporter...';
+  }
+
+  return 'Optional reopen note visible to the reporter...';
+}
+
+function getComposerTitle(mode: ReportComposerMode) {
+  if (mode === 'reply') return 'Reply to reporter';
+  if (mode === 'note') return 'Add private note';
+  if (mode === 'close') return 'Close report';
+  if (mode === 'dismiss') return 'Dismiss report';
+  return 'Reopen report';
+}
+
+function getStatusFromComposerMode(mode: ReportComposerMode): KodiakReportStatus | null {
+  if (mode === 'close') return 'reviewed';
+  if (mode === 'dismiss') return 'dismissed';
+  if (mode === 'reopen') return 'open';
+  return null;
+}
+
+function upsertReport(reports: KodiakReport[], updatedReport: KodiakReport) {
+  const exists = reports.some((report) => report.id === updatedReport.id);
+  const nextReports = exists
+    ? reports.map((report) => (report.id === updatedReport.id ? updatedReport : report))
+    : [updatedReport, ...reports];
+
+  return nextReports.sort((a, b) => Number(b.updatedAt ?? b.createdAt ?? 0) - Number(a.updatedAt ?? a.createdAt ?? 0));
 }
 
 function getChannelEmptyState(channel: WorkspaceChannel) {
@@ -94,6 +161,11 @@ function SafetyCenterReports({ identity }: Pick<ChatPlaceholderProps, 'identity'
   const [reports, setReports] = useState<KodiakReport[]>([]);
   const [isLoadingReports, setIsLoadingReports] = useState(true);
   const [reportsErrorText, setReportsErrorText] = useState<string | null>(null);
+  const [activeReportAction, setActiveReportAction] = useState<{ mode: ReportComposerMode; reportId: string } | null>(null);
+  const [actionDraft, setActionDraft] = useState('');
+  const [actionErrorText, setActionErrorText] = useState<string | null>(null);
+  const [actionSuccessText, setActionSuccessText] = useState<string | null>(null);
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const canReviewAllReports = isPlatformModerator(identity.userId);
 
   const reportCounts = useMemo(() => {
@@ -122,6 +194,63 @@ function SafetyCenterReports({ identity }: Pick<ChatPlaceholderProps, 'identity'
     }
   }
 
+  function beginReportAction(reportId: string, mode: ReportComposerMode) {
+    setActiveReportAction({ mode, reportId });
+    setActionDraft('');
+    setActionErrorText(null);
+    setActionSuccessText(null);
+  }
+
+  function cancelReportAction() {
+    setActiveReportAction(null);
+    setActionDraft('');
+    setActionErrorText(null);
+  }
+
+  async function handleSubmitReportAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!activeReportAction) {
+      return;
+    }
+
+    const trimmedDraft = actionDraft.trim();
+
+    if ((activeReportAction.mode === 'reply' || activeReportAction.mode === 'note') && trimmedDraft.length < 2) {
+      setActionErrorText('Add at least a short message before submitting.');
+      return;
+    }
+
+    setIsSubmittingAction(true);
+    setActionErrorText(null);
+    setActionSuccessText(null);
+
+    try {
+      let updatedReport: KodiakReport | null = null;
+      const nextStatus = getStatusFromComposerMode(activeReportAction.mode);
+
+      if (activeReportAction.mode === 'reply') {
+        updatedReport = await replyToKodiakReport(identity, activeReportAction.reportId, trimmedDraft);
+      } else if (activeReportAction.mode === 'note') {
+        updatedReport = await addKodiakReportNote(identity, activeReportAction.reportId, trimmedDraft);
+      } else if (nextStatus) {
+        updatedReport = await updateKodiakReportStatus(identity, activeReportAction.reportId, nextStatus, trimmedDraft);
+      }
+
+      if (updatedReport) {
+        setReports((currentReports) => upsertReport(currentReports, updatedReport));
+      }
+
+      setActionSuccessText('Report updated.');
+      cancelReportAction();
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to handle report', error);
+      setActionErrorText(error instanceof Error ? error.message : 'Could not update report. Try again.');
+    } finally {
+      setIsSubmittingAction(false);
+    }
+  }
+
   useEffect(() => {
     void refreshReports();
   }, [identity]);
@@ -134,8 +263,8 @@ function SafetyCenterReports({ identity }: Pick<ChatPlaceholderProps, 'identity'
           <h2>Report review is online.</h2>
           <p>
             {canReviewAllReports
-              ? 'Moderator view is enabled. You can see reports submitted across Kodiak Connect.'
-              : 'This view shows reports you submitted to Kodiak Trust & Safety.'}
+              ? 'Moderator view is enabled. You can reply, add private notes, close, dismiss, or reopen reports.'
+              : 'This view shows reports you submitted and public moderator responses.'}
           </p>
         </div>
 
@@ -155,7 +284,7 @@ function SafetyCenterReports({ identity }: Pick<ChatPlaceholderProps, 'identity'
         </div>
         <div>
           <strong>{reportCounts.reviewed}</strong>
-          <span>Reviewed</span>
+          <span>Closed</span>
         </div>
         <div>
           <strong>{reportCounts.dismissed}</strong>
@@ -170,6 +299,20 @@ function SafetyCenterReports({ identity }: Pick<ChatPlaceholderProps, 'identity'
         </div>
       ) : null}
 
+      {actionErrorText ? (
+        <div className="matrix-chat-status matrix-chat-status--error">
+          <span className="status-light status-light--offline" aria-hidden="true" />
+          <span>{actionErrorText}</span>
+        </div>
+      ) : null}
+
+      {actionSuccessText ? (
+        <div className="matrix-chat-status">
+          <span className="status-light status-light--online" aria-hidden="true" />
+          <span>{actionSuccessText}</span>
+        </div>
+      ) : null}
+
       {isLoadingReports ? <div className="matrix-empty-state">Loading Safety Center reports...</div> : null}
 
       {!isLoadingReports && !reports.length && !reportsErrorText ? (
@@ -180,45 +323,104 @@ function SafetyCenterReports({ identity }: Pick<ChatPlaceholderProps, 'identity'
 
       {!isLoadingReports && reports.length ? (
         <div className="safety-report-list" aria-label="Submitted reports">
-          {reports.map((report) => (
-            <article className="safety-report-card" key={report.id}>
-              <header>
-                <div>
-                  <p className="eyebrow eyebrow--ember">{getReportCategoryLabel(report.category)}</p>
-                  <h3>{report.targetDisplayName || getDisplayName(report.targetUserId)}</h3>
-                </div>
-                <span className={`safety-report-status safety-report-status--${report.status}`}>
-                  {getReportStatusLabel(report.status)}
-                </span>
-              </header>
+          {reports.map((report) => {
+            const activeActionForReport = activeReportAction?.reportId === report.id ? activeReportAction.mode : null;
 
-              <dl className="safety-report-meta">
-                <div>
-                  <dt>Reporter</dt>
-                  <dd>{getDisplayName(report.reporterUserId)}</dd>
-                </div>
-                <div>
-                  <dt>Target</dt>
-                  <dd>{report.targetUserId}</dd>
-                </div>
-                <div>
-                  <dt>Context</dt>
-                  <dd>{report.context || report.roomId || 'No context provided'}</dd>
-                </div>
-                <div>
-                  <dt>Submitted</dt>
-                  <dd>{formatReportDate(report.createdAt)}</dd>
-                </div>
-              </dl>
+            return (
+              <article className="safety-report-card" key={report.id}>
+                <header>
+                  <div>
+                    <p className="eyebrow eyebrow--ember">{getReportCategoryLabel(report.category)}</p>
+                    <h3>{report.targetDisplayName || getDisplayName(report.targetUserId)}</h3>
+                  </div>
+                  <span className={`safety-report-status safety-report-status--${report.status}`}>
+                    {getReportStatusLabel(report.status)}
+                  </span>
+                </header>
 
-              <p>{report.details}</p>
+                <dl className="safety-report-meta">
+                  <div>
+                    <dt>Reporter</dt>
+                    <dd>{getDisplayName(report.reporterUserId)}</dd>
+                  </div>
+                  <div>
+                    <dt>Target</dt>
+                    <dd>{report.targetUserId}</dd>
+                  </div>
+                  <div>
+                    <dt>Context</dt>
+                    <dd>{report.context || report.roomId || 'No context provided'}</dd>
+                  </div>
+                  <div>
+                    <dt>Submitted</dt>
+                    <dd>{formatReportDate(report.createdAt)}</dd>
+                  </div>
+                </dl>
 
-              <footer>
-                <span>Report ID: {report.id}</span>
-                {report.messageEventId ? <span>Message: {report.messageEventId}</span> : null}
-              </footer>
-            </article>
-          ))}
+                <p>{report.details}</p>
+
+                {report.actions?.length ? (
+                  <div className="safety-report-history" aria-label="Report history">
+                    <h4>History</h4>
+                    {report.actions.map((action) => (
+                      <article className={`safety-report-action safety-report-action--${action.type}`} key={action.id}>
+                        <header>
+                          <strong>{getActionLabel(action)}</strong>
+                          <time dateTime={new Date(action.createdAt).toISOString()}>{formatReportDate(action.createdAt)}</time>
+                        </header>
+                        <p>{action.body}</p>
+                        <small>
+                          {getDisplayName(action.actorUserId)}
+                          {action.type === 'note' ? ' · internal only' : ''}
+                        </small>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+
+                {canReviewAllReports ? (
+                  <div className="safety-report-controls" aria-label="Report actions">
+                    <button type="button" onClick={() => beginReportAction(report.id, 'reply')}>Reply</button>
+                    <button type="button" onClick={() => beginReportAction(report.id, 'note')}>Private note</button>
+                    {report.status !== 'reviewed' ? (
+                      <button type="button" onClick={() => beginReportAction(report.id, 'close')}>Close</button>
+                    ) : null}
+                    {report.status !== 'dismissed' ? (
+                      <button type="button" onClick={() => beginReportAction(report.id, 'dismiss')}>Dismiss</button>
+                    ) : null}
+                    {report.status !== 'open' ? (
+                      <button type="button" onClick={() => beginReportAction(report.id, 'reopen')}>Reopen</button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {activeActionForReport ? (
+                  <form className="safety-report-composer" onSubmit={handleSubmitReportAction}>
+                    <label>
+                      <span>{getComposerTitle(activeActionForReport)}</span>
+                      <textarea
+                        value={actionDraft}
+                        onChange={(event) => setActionDraft(event.target.value)}
+                        placeholder={getComposerPlaceholder(activeActionForReport)}
+                        rows={4}
+                      />
+                    </label>
+                    <div>
+                      <button type="button" onClick={cancelReportAction} disabled={isSubmittingAction}>Cancel</button>
+                      <button type="submit" disabled={isSubmittingAction}>
+                        {isSubmittingAction ? 'Saving...' : 'Save action'}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+
+                <footer>
+                  <span>Report ID: {report.id}</span>
+                  {report.messageEventId ? <span>Message: {report.messageEventId}</span> : null}
+                </footer>
+              </article>
+            );
+          })}
         </div>
       ) : null}
     </div>
