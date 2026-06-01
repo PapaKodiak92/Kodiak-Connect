@@ -10,6 +10,7 @@ function optionalEnv(value: unknown) {
 }
 
 export const kodiakEnv = {
+  giphyApiKey: optionalEnv(import.meta.env.VITE_GIPHY_API_KEY),
   matrixBaseUrl: normalizeBaseUrl(optionalEnv(import.meta.env.VITE_MATRIX_BASE_URL) ?? DEFAULT_MATRIX_BASE_URL),
   matrixServerName: optionalEnv(import.meta.env.VITE_MATRIX_SERVER_NAME) ?? DEFAULT_MATRIX_SERVER_NAME,
   turnstileSiteKey: optionalEnv(import.meta.env.VITE_TURNSTILE_SITE_KEY),
