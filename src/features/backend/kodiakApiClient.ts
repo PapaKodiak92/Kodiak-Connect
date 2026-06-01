@@ -1,10 +1,24 @@
-﻿import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
+import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 
 export type KodiakPresenceState = 'online' | 'idle' | 'offline';
 export type KodiakFriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
 export type KodiakReportCategory = 'harassment' | 'spam' | 'scam' | 'threats' | 'impersonation' | 'other';
+export type KodiakReportStatus = 'open' | 'reviewed' | 'dismissed';
+export type KodiakReportActionType = 'reply' | 'note' | 'status';
+
+export interface KodiakReportAction {
+  actorUserId: string;
+  body: string;
+  createdAt: number;
+  fromStatus?: KodiakReportStatus;
+  id: string;
+  toStatus?: KodiakReportStatus;
+  type: KodiakReportActionType;
+  visibleToReporter?: boolean;
+}
 
 export interface KodiakReport {
+  actions?: KodiakReportAction[];
   category: KodiakReportCategory;
   context?: string;
   createdAt: number;
@@ -13,7 +27,7 @@ export interface KodiakReport {
   messageEventId?: string;
   reporterUserId: string;
   roomId?: string;
-  status: 'open' | 'reviewed' | 'dismissed';
+  status: KodiakReportStatus;
   targetAvatarUrl?: string;
   targetDisplayName: string;
   targetUserId: string;
@@ -55,6 +69,7 @@ interface KodiakProfileResponse {
 }
 
 interface KodiakReportsResponse {
+  canViewAllReports?: boolean;
   report?: KodiakReport;
   reports?: KodiakReport[];
 }
@@ -214,7 +229,6 @@ export async function saveKodiakProfile(
   return data.profile ?? null;
 }
 
-
 export async function searchKodiakProfiles(identity: MatrixLoginIdentity, query: string, limit = 12) {
   const response = await fetch(
     `${KODIAK_API_BASE_URL}/api/profiles/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(String(limit))}`,
@@ -230,7 +244,6 @@ export async function searchKodiakProfiles(identity: MatrixLoginIdentity, query:
   const data = (await response.json()) as KodiakProfilesResponse;
   return Object.values(data.profiles ?? {});
 }
-
 
 export async function loadKodiakBlockState(identity: MatrixLoginIdentity) {
   const response = await fetch(
@@ -281,7 +294,6 @@ export async function unblockKodiakUser(identity: MatrixLoginIdentity, targetUse
   };
 }
 
-
 export async function submitKodiakReport(
   identity: MatrixLoginIdentity,
   report: {
@@ -313,4 +325,37 @@ export async function loadKodiakReports(identity: MatrixLoginIdentity) {
 
   const data = (await response.json()) as KodiakReportsResponse;
   return data.reports ?? [];
+}
+
+export async function replyToKodiakReport(identity: MatrixLoginIdentity, reportId: string, message: string) {
+  const data = await postKodiak<KodiakReportsResponse>(identity, '/api/reports/reply', {
+    message,
+    reportId,
+  });
+
+  return data.report ?? null;
+}
+
+export async function addKodiakReportNote(identity: MatrixLoginIdentity, reportId: string, note: string) {
+  const data = await postKodiak<KodiakReportsResponse>(identity, '/api/reports/note', {
+    note,
+    reportId,
+  });
+
+  return data.report ?? null;
+}
+
+export async function updateKodiakReportStatus(
+  identity: MatrixLoginIdentity,
+  reportId: string,
+  status: KodiakReportStatus,
+  note?: string,
+) {
+  const data = await postKodiak<KodiakReportsResponse>(identity, '/api/reports/status', {
+    note: note ?? '',
+    reportId,
+    status,
+  });
+
+  return data.report ?? null;
 }
