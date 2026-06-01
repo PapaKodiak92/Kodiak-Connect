@@ -1,36 +1,34 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
+import { playKodiakSound } from '../audio/kodiakSounds';
+import {
+  loadKodiakPresence,
+  loadKodiakProfiles,
+  saveKodiakProfile,
+  sendKodiakPresenceHeartbeat,
+  type KodiakPresenceState,
+} from '../backend/kodiakApiClient';
 import {
   createDirectMessageRoom,
   findDirectMessageRoom,
-  resolveDirectMessageRoom,
   getAuthenticatedMatrixMediaObjectUrl,
   getMatrixMediaUrl,
   joinRoomByAlias,
   joinRoomById,
-  loadProfileAvatarUrl,
-  loadProfileDisplayName,
-  loadUserPresence,
   loadRecentMessages,
   loadRoomMembers,
-  loadRecentProfileBios,
-  saveDirectMessageRoom,
   loadTypingUsers,
   MatrixRestError,
   redactMessage,
-  sendProfileBio,
+  resolveDirectMessageRoom,
+  saveDirectMessageRoom,
   sendReaction,
-  saveOwnAvatarUrl,
-  saveOwnDisplayName,
   sendReplacementMessage,
-  uploadProfileAvatar,
   sendTextMessage,
   sendTypingState,
-  setOwnPresence,
+  uploadProfileAvatar,
   type MatrixTextMessage,
 } from '../matrix/matrixRestClient';
-import { playKodiakSound } from '../audio/kodiakSounds';
-import { loadKodiakPresence, sendKodiakPresenceHeartbeat, type KodiakPresenceState } from '../backend/kodiakApiClient';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 type FriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
@@ -83,6 +81,28 @@ const MESSAGE_POLL_INTERVAL_MS = 5000;
 const TYPING_POLL_INTERVAL_MS = 2500;
 const TYPING_TIMEOUT_MS = 5000;
 const TYPING_IDLE_STOP_MS = 2500;
+const KODIAK_PROFILE_CACHE_KEY = 'KC_BACKEND_PROFILE_CACHE';
+
+function readKodiakProfileCache() {
+  try {
+    return JSON.parse(window.localStorage.getItem(KODIAK_PROFILE_CACHE_KEY) ?? '{}') as {
+      avatars?: Record<string, string>;
+      bios?: Record<string, string>;
+      displayNames?: Record<string, string>;
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeKodiakProfileCache(cache: {
+  avatars?: Record<string, string>;
+  bios?: Record<string, string>;
+  displayNames?: Record<string, string>;
+}) {
+  window.localStorage.setItem(KODIAK_PROFILE_CACHE_KEY, JSON.stringify(cache));
+}
+
 const RESERVED_DISPLAY_NAMES = new Set([
   'admin',
   'administrator',
@@ -418,11 +438,11 @@ export function MatrixChannelPanel({
   const [roomMemberUserIds, setRoomMemberUserIds] = useState<string[]>([]);
   const [presenceByUserId, setPresenceByUserId] = useState<Record<string, KodiakPresenceState | 'unavailable'>>({});
   const [isMemberPanelOpen, setIsMemberPanelOpen] = useState(true);
-  const [displayNamesByUserId, setDisplayNamesByUserId] = useState<Record<string, string>>({});
-  const [avatarUrlsByUserId, setAvatarUrlsByUserId] = useState<Record<string, string>>({});
+  const [displayNamesByUserId, setDisplayNamesByUserId] = useState<Record<string, string>>(() => readKodiakProfileCache().displayNames ?? {});
+  const [avatarUrlsByUserId, setAvatarUrlsByUserId] = useState<Record<string, string>>(() => readKodiakProfileCache().avatars ?? {});
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
-  const [profileBiosByUserId, setProfileBiosByUserId] = useState<Record<string, string>>({});
+  const [profileBiosByUserId, setProfileBiosByUserId] = useState<Record<string, string>>(() => readKodiakProfileCache().bios ?? {});
   const [bioDraft, setBioDraft] = useState('');
   const [openProfileUserId, setOpenProfileUserId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -449,6 +469,7 @@ export function MatrixChannelPanel({
   const isTypingSentRef = useRef(false);
   const hasLoadedSoundBaselineRef = useRef(false);
   const latestSoundMessageTsRef = useRef(0);
+  const backendAvatarObjectUrlsRef = useRef<Record<string, { source: string; url: string }>>({});
 
   const displayName = getDisplayName(identity.userId);
   const currentUserLocalpart = getUserLocalpart(identity.userId);
@@ -543,9 +564,157 @@ export function MatrixChannelPanel({
     );
   }
 
+  useEffect(() => {
+    writeKodiakProfileCache({
+      avatars: avatarUrlsByUserId,
+      bios: profileBiosByUserId,
+      displayNames: displayNamesByUserId,
+    });
+  }, [avatarUrlsByUserId, displayNamesByUserId, profileBiosByUserId]);
+
   const displayNamesByLocalpart = Object.fromEntries(
     Object.entries(displayNamesByUserId).map(([userId, displayName]) => [getUserLocalpart(userId), displayName]),
   );
+
+  useEffect(() => {
+    const userIdsToLoad = new Set<string>([identity.userId]);
+
+    for (const message of messages) {
+      userIdsToLoad.add(message.sender);
+
+      for (const reaction of message.reactions ?? []) {
+        for (const sender of reaction.senders) {
+          userIdsToLoad.add(sender);
+        }
+      }
+    }
+
+    for (const userId of typingUserIds) {
+      userIdsToLoad.add(userId);
+    }
+
+    for (const userId of roomMemberUserIds) {
+      userIdsToLoad.add(userId);
+    }
+
+    for (const userId of Object.keys(friendStatusByUserId)) {
+      userIdsToLoad.add(userId);
+    }
+
+    if (openProfileUserId) {
+      userIdsToLoad.add(openProfileUserId);
+    }
+
+    const userIds = [...userIdsToLoad].filter(Boolean);
+
+    if (!userIds.length) {
+      return undefined;
+    }
+
+    let isActive = true;
+
+    async function refreshBackendProfiles() {
+      try {
+        const profilesByUserId = await loadKodiakProfiles(identity, userIds);
+
+        if (!isActive) {
+          return;
+        }
+
+        setDisplayNamesByUserId((currentNames) => {
+          let hasChanged = false;
+          const nextNames = { ...currentNames };
+
+          for (const [userId, profile] of Object.entries(profilesByUserId)) {
+            const nextDisplayName = profile.displayName || getDisplayName(userId);
+
+            if (nextNames[userId] !== nextDisplayName) {
+              nextNames[userId] = nextDisplayName;
+              hasChanged = true;
+            }
+          }
+
+          return hasChanged ? nextNames : currentNames;
+        });
+
+        setProfileBiosByUserId((currentBios) => {
+          let hasChanged = false;
+          const nextBios = { ...currentBios };
+
+          for (const [userId, profile] of Object.entries(profilesByUserId)) {
+            const nextBio = profile.bio ?? '';
+
+            if (nextBios[userId] !== nextBio) {
+              nextBios[userId] = nextBio;
+              hasChanged = true;
+            }
+          }
+
+          return hasChanged ? nextBios : currentBios;
+        });
+
+        const avatarEntries = await Promise.all(
+          Object.entries(profilesByUserId).map(async ([userId, profile]) => {
+            const profileAvatarUrl = profile.avatarUrl ?? '';
+
+            if (!profileAvatarUrl) {
+              return [userId, ''] as const;
+            }
+
+            const cachedAvatar = backendAvatarObjectUrlsRef.current[userId];
+
+            if (cachedAvatar?.source === profileAvatarUrl) {
+              return [userId, cachedAvatar.url] as const;
+            }
+
+            const avatarUrl = profileAvatarUrl.startsWith('mxc://')
+              ? (await getAuthenticatedMatrixMediaObjectUrl(identity, profileAvatarUrl, 96, 96).catch(() => null)) ?? ''
+              : profileAvatarUrl;
+
+            if (avatarUrl) {
+              backendAvatarObjectUrlsRef.current[userId] = {
+                source: profileAvatarUrl,
+                url: avatarUrl,
+              };
+            }
+
+            return [userId, avatarUrl] as const;
+          }),
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        setAvatarUrlsByUserId((currentAvatars) => {
+          let hasChanged = false;
+          const nextAvatars = { ...currentAvatars };
+
+          for (const [userId, avatarUrl] of avatarEntries) {
+            if (avatarUrl && nextAvatars[userId] !== avatarUrl) {
+              nextAvatars[userId] = avatarUrl;
+              hasChanged = true;
+            }
+          }
+
+          return hasChanged ? nextAvatars : currentAvatars;
+        });
+      } catch (error) {
+        console.warn('[Kodiak Connect] Backend profile refresh failed', error);
+      }
+    }
+
+    void refreshBackendProfiles();
+
+    const profileIntervalId = window.setInterval(() => {
+      void refreshBackendProfiles();
+    }, 30_000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(profileIntervalId);
+    };
+  }, [friendStatusByUserId, identity, messages, openProfileUserId, roomMemberUserIds, typingUserIds]);
 
   const typingIndicatorText = typingUserIds.length
     ? getTypingIndicatorText(typingUserIds.map((userId) => getKnownDisplayName(userId)))
@@ -555,26 +724,9 @@ export function MatrixChannelPanel({
   const headerDisplayName = getKnownDisplayName(identity.userId);
   const roomMemberPresenceKey = roomMemberUserIds.join('|');
 
-  const refreshProfileBios = useCallback(
-    async (targetRoomId: string) => {
-      const biosByUserId = await loadRecentProfileBios(identity, targetRoomId);
-
-      setProfileBiosByUserId((currentBios) => {
-        let hasChanged = false;
-        const nextBios = { ...currentBios };
-
-        for (const [userId, bio] of Object.entries(biosByUserId)) {
-          if (nextBios[userId] !== bio) {
-            nextBios[userId] = bio;
-            hasChanged = true;
-          }
-        }
-
-        return hasChanged ? nextBios : currentBios;
-      });
-    },
-    [identity],
-  );
+  const refreshProfileBios = useCallback(async (_targetRoomId: string) => {
+    // Kodiak Backend owns profile bios now.
+  }, []);
 
   const refreshMessages = useCallback(
     async (targetRoomId: string) => {
@@ -634,127 +786,11 @@ export function MatrixChannelPanel({
     latestSoundMessageTsRef.current = 0;
   }, [activeChannel.id]);
 
-  useEffect(() => {
-    let isActive = true;
-    const userIdsToLoad = new Set<string>([identity.userId]);
+  // Matrix display-name reads disabled. Kodiak Backend owns display names.
 
-    for (const message of messages) {
-      userIdsToLoad.add(message.sender);
 
-      for (const reaction of message.reactions ?? []) {
-        for (const sender of reaction.senders) {
-          userIdsToLoad.add(sender);
-        }
-      }
-    }
+  // Matrix profile-avatar reads disabled. Kodiak Backend owns avatar references.
 
-    for (const userId of typingUserIds) {
-      userIdsToLoad.add(userId);
-    }
-
-    for (const userId of roomMemberUserIds) {
-      userIdsToLoad.add(userId);
-    }
-
-    const userIdsToRefresh = [...userIdsToLoad];
-
-    if (!userIdsToRefresh.length) {
-      return () => {
-        isActive = false;
-      };
-    }
-
-    void Promise.all(
-      userIdsToRefresh.map(async (userId) => {
-        try {
-          const displayName = await loadProfileDisplayName(identity, userId);
-          return [userId, displayName || getDisplayName(userId)] as const;
-        } catch {
-          return [userId, getDisplayName(userId)] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (!isActive) {
-        return;
-      }
-
-      setDisplayNamesByUserId((currentNames) => {
-        let hasChanged = false;
-        const nextNames = { ...currentNames };
-
-        for (const [userId, displayName] of entries) {
-          if (nextNames[userId] !== displayName) {
-            nextNames[userId] = displayName;
-            hasChanged = true;
-          }
-        }
-
-        return hasChanged ? nextNames : currentNames;
-      });
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, [displayNamesByUserId, identity, messages, roomMemberUserIds, typingUserIds]);
-
-  useEffect(() => {
-    let isActive = true;
-    const userIdsToLoad = new Set<string>([identity.userId]);
-
-    for (const message of messages) {
-      userIdsToLoad.add(message.sender);
-
-      for (const reaction of message.reactions ?? []) {
-        for (const sender of reaction.senders) {
-          userIdsToLoad.add(sender);
-        }
-      }
-    }
-
-    for (const userId of typingUserIds) {
-      userIdsToLoad.add(userId);
-    }
-
-    for (const userId of roomMemberUserIds) {
-      userIdsToLoad.add(userId);
-    }
-
-    const userIdsToRefresh = [...userIdsToLoad];
-
-    void Promise.all(
-      userIdsToRefresh.map(async (userId) => {
-        try {
-          const avatarMxcUrl = await loadProfileAvatarUrl(identity, userId);
-          return [userId, (await getAuthenticatedMatrixMediaObjectUrl(identity, avatarMxcUrl, 96, 96)) ?? ''] as const;
-        } catch {
-          return [userId, ''] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (!isActive) {
-        return;
-      }
-
-      setAvatarUrlsByUserId((currentAvatars) => {
-        let hasChanged = false;
-        const nextAvatars = { ...currentAvatars };
-
-        for (const [userId, avatarUrl] of entries) {
-          if (nextAvatars[userId] !== avatarUrl) {
-            nextAvatars[userId] = avatarUrl;
-            hasChanged = true;
-          }
-        }
-
-        return hasChanged ? nextAvatars : currentAvatars;
-      });
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, [avatarUrlsByUserId, identity, messages, roomMemberUserIds, typingUserIds]);
 
   useEffect(() => {
     if (openProfileUserId && roomId) {
@@ -764,30 +800,7 @@ export function MatrixChannelPanel({
     }
   }, [openProfileUserId, refreshProfileBios, roomId]);
 
-  useEffect(() => {
-    if (!roomId) {
-      return undefined;
-    }
-
-    let isActive = true;
-
-    void loadRecentProfileBios(identity, roomId).then((biosByUserId) => {
-      if (!isActive) {
-        return;
-      }
-
-      setProfileBiosByUserId((currentBios) => ({
-        ...currentBios,
-        ...biosByUserId,
-      }));
-    }).catch((error) => {
-      console.warn('[Kodiak Connect] Failed to load profile bios', error);
-    });
-
-    return () => {
-      isActive = false;
-    };
-  }, [identity, messages.length, roomId]);
+  // Matrix room bio reads disabled. Kodiak Backend owns bios.
 
   useEffect(() => {
     setDisplayNameDraft(getKnownDisplayName(identity.userId));
@@ -984,33 +997,6 @@ export function MatrixChannelPanel({
               return getKnownDisplayName(a).localeCompare(getKnownDisplayName(b));
             }),
         );
-
-        setDisplayNamesByUserId((currentNames) => {
-          let hasChanged = false;
-          const nextNames = { ...currentNames };
-
-          for (const member of members) {
-            if (member.displayName && nextNames[member.userId] !== member.displayName) {
-              nextNames[member.userId] = member.displayName;
-              hasChanged = true;
-            }
-          }
-
-          return hasChanged ? nextNames : currentNames;
-        });
-
-        setAvatarUrlsByUserId((currentAvatars) => {
-          let hasChanged = false;
-          const nextAvatars = { ...currentAvatars };
-
-          for (const member of members) {
-            if (member.avatarUrl && !nextAvatars[member.userId]) {
-              hasChanged = true;
-            }
-          }
-
-          return hasChanged ? nextAvatars : currentAvatars;
-        });
       } catch (error) {
         console.warn('[Kodiak Connect] Failed to load room members', error);
       }
@@ -1481,85 +1467,56 @@ export function MatrixChannelPanel({
       return;
     }
 
-    const normalizedNextDisplayName = normalizeDisplayName(nextDisplayName);
-
-    if (RESERVED_DISPLAY_NAMES.has(normalizedNextDisplayName)) {
-      setSettingsErrorText('That display name is reserved.');
-      return;
-    }
-
-    const duplicateDisplayNameUser = Object.entries(displayNamesByUserId).find(([userId, displayName]) => {
-      return userId !== identity.userId && normalizeDisplayName(displayName) === normalizedNextDisplayName;
-    });
-
-    if (duplicateDisplayNameUser) {
-      setSettingsErrorText('That display name is already taken.');
-      return;
-    }
-
     setIsSavingSettings(true);
     setSettingsErrorText(null);
 
     try {
-      const currentDisplayName = getKnownDisplayName(identity.userId);
-
-      if (normalizeDisplayName(currentDisplayName) !== normalizedNextDisplayName) {
-        await saveOwnDisplayName(identity, nextDisplayName);
-
-        setDisplayNamesByUserId((currentNames) => ({
-          ...currentNames,
-          [identity.userId]: nextDisplayName,
-        }));
-      }
-
-      let savedAvatarUrl = avatarUrlsByUserId[identity.userId] ?? '';
+      let nextAvatarSource = '';
 
       if (avatarFile) {
-        try {
-          const avatarMxcUrl = await uploadProfileAvatar(identity, avatarFile);
-          await saveOwnAvatarUrl(identity, avatarMxcUrl);
+        const avatarMxcUrl = await uploadProfileAvatar(identity, avatarFile);
+        nextAvatarSource = avatarMxcUrl;
+      }
 
-          const authenticatedAvatarUrl = await getAuthenticatedMatrixMediaObjectUrl(identity, avatarMxcUrl, 96, 96).catch(() => null);
-          savedAvatarUrl = authenticatedAvatarUrl ?? avatarPreviewUrl ?? savedAvatarUrl;
+      const savedProfile = await saveKodiakProfile(identity, {
+        ...(nextAvatarSource ? { avatarUrl: nextAvatarSource } : {}),
+        bio: nextBio,
+        displayName: nextDisplayName,
+      });
 
+      setDisplayNamesByUserId((currentNames) => ({
+        ...currentNames,
+        [identity.userId]: savedProfile?.displayName ?? nextDisplayName,
+      }));
+
+      setProfileBiosByUserId((currentBios) => ({
+        ...currentBios,
+        [identity.userId]: savedProfile?.bio ?? nextBio,
+      }));
+
+      if (nextAvatarSource) {
+        const authenticatedAvatarUrl = await getAuthenticatedMatrixMediaObjectUrl(identity, nextAvatarSource, 96, 96).catch(() => null);
+        const savedAvatarUrl = authenticatedAvatarUrl ?? avatarPreviewUrl ?? '';
+
+        if (savedAvatarUrl) {
           setAvatarUrlsByUserId((currentAvatars) => ({
             ...currentAvatars,
             [identity.userId]: savedAvatarUrl,
           }));
-        } catch (avatarError) {
-          console.error('[Kodiak Connect] Failed to save profile picture', avatarError);
-          const isRateLimited = avatarError instanceof MatrixRestError && avatarError.status === 429;
-          const avatarErrorMessage = avatarError instanceof Error ? avatarError.message : 'Unknown avatar upload error.';
 
-          setSettingsErrorText(
-            isRateLimited
-              ? 'Matrix is rate-limiting profile picture uploads. Wait about a minute, then press Save again.'
-              : `Display name saved, but profile picture could not be saved. ${avatarErrorMessage}`,
-          );
-          return;
+          backendAvatarObjectUrlsRef.current[identity.userId] = {
+            source: nextAvatarSource,
+            url: savedAvatarUrl,
+          };
         }
       }
 
-      if (roomId) {
-        try {
-          await sendProfileBio(identity, roomId, nextBio);
-        } catch (bioError) {
-          console.error('[Kodiak Connect] Failed to save profile bio', bioError);
-          setSettingsErrorText('Profile saved, but bio could not be published. Try again in a moment.');
-          return;
-        }
-      }
-
-      setProfileBiosByUserId((currentBios) => ({
-        ...currentBios,
-        [identity.userId]: nextBio,
-      }));
       setAvatarFile(null);
       setAvatarPreviewUrl(null);
       setIsSettingsOpen(false);
     } catch (error) {
       console.error('[Kodiak Connect] Failed to save profile settings', error);
-      setSettingsErrorText('Could not save profile settings. Try again.');
+      setSettingsErrorText(error instanceof Error ? error.message : 'Could not save profile settings. Try again.');
     } finally {
       setIsSavingSettings(false);
     }
