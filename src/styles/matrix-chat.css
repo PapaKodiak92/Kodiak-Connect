@@ -565,3 +565,68 @@
   border-color: rgba(248, 113, 113, 0.74);
   background: rgba(127, 29, 29, 0.46);
 }
+
+
+.matrix-message {
+  cursor: context-menu;
+  touch-action: manipulation;
+}
+
+.matrix-message-actions,
+.matrix-message-action-trigger {
+  display: none !important;
+}
+
+.matrix-action-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.matrix-message-action-menu--floating {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  z-index: 70;
+}
+
+
+.kodiak-global-message-action-menu {
+  z-index: 90;
+  width: 170px;
+  pointer-events: auto;
+}
+
+.matrix-action-menu-backdrop {
+  cursor: default;
+}
+
+
+.matrix-message {
+  cursor: context-menu;
+}
+
+
+.matrix-action-menu-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 60 !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  cursor: default;
+}
+
+.kodiak-global-message-action-menu {
+  z-index: 90 !important;
+}
