@@ -41,7 +41,9 @@
   line-height: 1.5;
 }
 
-.safety-center-hero button {
+.safety-center-hero button,
+.safety-report-controls button,
+.safety-report-composer button {
   flex: 0 0 auto;
   border: 1px solid rgba(251, 146, 60, 0.28);
   border-radius: 999px;
@@ -52,12 +54,18 @@
 }
 
 .safety-center-hero button:hover:not(:disabled),
-.safety-center-hero button:focus-visible:not(:disabled) {
+.safety-center-hero button:focus-visible:not(:disabled),
+.safety-report-controls button:hover:not(:disabled),
+.safety-report-controls button:focus-visible:not(:disabled),
+.safety-report-composer button:hover:not(:disabled),
+.safety-report-composer button:focus-visible:not(:disabled) {
   border-color: rgba(251, 146, 60, 0.72);
   background: rgba(251, 146, 60, 0.14);
 }
 
-.safety-center-hero button:disabled {
+.safety-center-hero button:disabled,
+.safety-report-controls button:disabled,
+.safety-report-composer button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -180,10 +188,128 @@
   font-size: 0.9rem;
 }
 
+.safety-report-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 0.85rem;
+}
+
+.safety-report-controls button,
+.safety-report-composer button {
+  font-size: 0.78rem;
+  padding: 0.55rem 0.82rem;
+}
+
+.safety-report-history {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.34);
+  padding: 0.8rem;
+}
+
+.safety-report-history h4 {
+  margin: 0;
+  color: #fed7aa;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.safety-report-action {
+  display: grid;
+  gap: 0.32rem;
+  border-left: 3px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.54);
+  padding: 0.7rem 0.8rem;
+}
+
+.safety-report-action--reply {
+  border-left-color: rgba(34, 211, 238, 0.6);
+}
+
+.safety-report-action--note {
+  border-left-color: rgba(168, 85, 247, 0.56);
+}
+
+.safety-report-action--status {
+  border-left-color: rgba(251, 146, 60, 0.62);
+}
+
+.safety-report-action header {
+  align-items: baseline;
+}
+
+.safety-report-action strong {
+  color: #fff7ed;
+  font-size: 0.9rem;
+}
+
+.safety-report-action time,
+.safety-report-action small {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.safety-report-action p {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.safety-report-composer {
+  display: grid;
+  gap: 0.7rem;
+  border: 1px solid rgba(251, 146, 60, 0.18);
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.42);
+  padding: 0.85rem;
+}
+
+.safety-report-composer label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.safety-report-composer label span {
+  color: #fed7aa;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.safety-report-composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 6rem;
+  border: 1px solid rgba(251, 146, 60, 0.22);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.72);
+  color: #fff7ed;
+  font: inherit;
+  line-height: 1.45;
+  padding: 0.85rem 0.95rem;
+}
+
+.safety-report-composer textarea:focus {
+  border-color: rgba(251, 146, 60, 0.78);
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.12);
+  outline: none;
+}
+
+.safety-report-composer > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 @media (max-width: 760px) {
   .safety-center-hero,
   .safety-report-card header,
-  .safety-report-card footer {
+  .safety-report-card footer,
+  .safety-report-action header {
     align-items: stretch;
     flex-direction: column;
   }
@@ -191,5 +317,13 @@
   .safety-center-stats,
   .safety-report-meta {
     grid-template-columns: 1fr;
+  }
+
+  .safety-report-composer > div {
+    justify-content: stretch;
+  }
+
+  .safety-report-composer button {
+    flex: 1 1 auto;
   }
 }
