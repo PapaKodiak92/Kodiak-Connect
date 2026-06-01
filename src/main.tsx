@@ -6,6 +6,7 @@ import './styles/brand.css';
 import './styles/launcher.css';
 import './styles/acknowledgement.css';
 import './styles/matrix-chat.css';
+import './styles/workspace-polish.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
