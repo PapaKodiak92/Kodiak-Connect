@@ -6,12 +6,14 @@ import {
   resolveDirectMessageRoom,
   joinRoomByAlias,
   joinRoomById,
+  loadProfileDisplayName,
   loadRecentMessages,
   saveDirectMessageRoom,
   loadTypingUsers,
   MatrixRestError,
   redactMessage,
   sendReaction,
+  saveOwnDisplayName,
   sendReplacementMessage,
   sendTextMessage,
   sendTypingState,
@@ -59,6 +61,20 @@ const MESSAGE_POLL_INTERVAL_MS = 5000;
 const TYPING_POLL_INTERVAL_MS = 2500;
 const TYPING_TIMEOUT_MS = 5000;
 const TYPING_IDLE_STOP_MS = 2500;
+const RESERVED_DISPLAY_NAMES = new Set([
+  'admin',
+  'administrator',
+  'moderator',
+  'mod',
+  'support',
+  'system',
+  'kodiak',
+  'kodiak connect',
+  'kodiakconnect',
+  'official',
+  'security',
+  'trustandsafety',
+]);
 
 function getDmRoomCacheKey(currentUserId: string, targetUserId: string) {
   return `KC_DM_ROOM:${[currentUserId, targetUserId].sort().join('|')}`;
@@ -79,6 +95,10 @@ function getDirectMessageTargetUserId(channel: WorkspaceChannel, currentUserId: 
   }
 
   return channel.matrixDmUserId;
+}
+
+function normalizeDisplayName(displayName: string) {
+  return displayName.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function getDisplayName(userId: string) {
@@ -247,7 +267,12 @@ function getActiveMentionSearch(draftMessage: string): MentionSearch | null {
   };
 }
 
-function getMentionSuggestions(messages: MatrixTextMessage[], currentUserLocalpart: string, search: MentionSearch | null) {
+function getMentionSuggestions(
+  messages: MatrixTextMessage[],
+  currentUserLocalpart: string,
+  search: MentionSearch | null,
+  displayNamesByUserId: Record<string, string>,
+) {
   if (!search) {
     return [];
   }
@@ -262,14 +287,17 @@ function getMentionSuggestions(messages: MatrixTextMessage[], currentUserLocalpa
     }
 
     suggestionsByLocalpart.set(localpart, {
-      displayName: getDisplayName(message.sender),
+      displayName: displayNamesByUserId[message.sender] || getDisplayName(message.sender),
       localpart,
       userId: message.sender,
     });
   }
 
   return [...suggestionsByLocalpart.values()]
-    .filter((suggestion) => suggestion.localpart.includes(search.query))
+    .filter((suggestion) => {
+      const query = search.query.toLowerCase();
+      return suggestion.localpart.includes(query) || suggestion.displayName.toLowerCase().includes(query);
+    })
     .slice(0, 6);
 }
 
@@ -285,9 +313,7 @@ function hasUserReacted(message: MatrixTextMessage, reactionKey: string, userId:
   return message.reactions?.some((reaction) => reaction.key === reactionKey && reaction.senders.includes(userId)) ?? false;
 }
 
-function getTypingIndicatorText(typingUserIds: string[]) {
-  const typingNames = typingUserIds.map(getDisplayName);
-
+function getTypingIndicatorText(typingNames: string[]) {
   if (typingNames.length === 0) {
     return '';
   }
@@ -303,7 +329,11 @@ function getTypingIndicatorText(typingUserIds: string[]) {
   return `${typingNames[0]} and ${typingNames.length - 1} others are typing`;
 }
 
-function renderMessageTextWithMentions(body: string, currentUserLocalpart: string): ReactNode[] {
+function renderMessageTextWithMentions(
+  body: string,
+  currentUserLocalpart: string,
+  displayNamesByLocalpart: Record<string, string>,
+): ReactNode[] {
   const renderedParts: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -322,10 +352,11 @@ function renderMessageTextWithMentions(body: string, currentUserLocalpart: strin
 
     const mentionLocalpart = mention.slice(1).toLowerCase();
     const isMentioningCurrentUser = mentionLocalpart === currentUserLocalpart;
+    const visibleMentionName = displayNamesByLocalpart[mentionLocalpart] ?? mention.slice(1);
 
     renderedParts.push(
       <span key={`${mention}-${mentionStart}`} className={`matrix-mention ${isMentioningCurrentUser ? 'matrix-mention--self' : ''}`}>
-        {mention}
+        {visibleMentionName}
       </span>,
     );
 
@@ -354,6 +385,11 @@ export function MatrixChannelPanel({
   const [pendingDeleteMessage, setPendingDeleteMessage] = useState<MatrixTextMessage | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
+  const [displayNamesByUserId, setDisplayNamesByUserId] = useState<Record<string, string>>({});
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsErrorText, setSettingsErrorText] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -369,14 +405,25 @@ export function MatrixChannelPanel({
   const displayName = getDisplayName(identity.userId);
   const currentUserLocalpart = getUserLocalpart(identity.userId);
   const activeMentionSearch = getActiveMentionSearch(draftMessage);
-  const mentionSuggestions = getMentionSuggestions(messages, currentUserLocalpart, activeMentionSearch);
+  const mentionSuggestions = getMentionSuggestions(messages, currentUserLocalpart, activeMentionSearch, displayNamesByUserId);
   const canPost = canPostInChannel(activeChannel, identity.userId);
   const canModerate = canModerateMessages(identity.userId);
   const openActionMenuMessage = openActionMenu ? messages.find((message) => message.eventId === openActionMenu.messageId) ?? null : null;
   const openActionMenuParsedMessage = openActionMenuMessage ? parseMessageBody(openActionMenuMessage.body) : null;
-  const typingIndicatorText = getTypingIndicatorText(typingUserIds);
-  const channelHeadingPrefix = activeChannel.kind === 'dm' ? '@' : '#';
+  function getKnownDisplayName(userId: string) {
+    return displayNamesByUserId[userId] || getDisplayName(userId);
+  }
+
+  const displayNamesByLocalpart = Object.fromEntries(
+    Object.entries(displayNamesByUserId).map(([userId, displayName]) => [getUserLocalpart(userId), displayName]),
+  );
+
+  const typingIndicatorText = typingUserIds.length
+    ? getTypingIndicatorText(typingUserIds.map((userId) => getKnownDisplayName(userId)))
+    : '';
+  const channelHeadingPrefix = activeChannel.kind === 'dm' ? '' : '#';
   const channelEyebrowLabel = activeChannel.kind === 'dm' ? 'Direct Message' : activeSpace.name;
+  const headerDisplayName = getKnownDisplayName(identity.userId);
 
   const refreshMessages = useCallback(
     async (targetRoomId: string) => {
@@ -403,6 +450,70 @@ export function MatrixChannelPanel({
   useEffect(() => {
     shouldStickToBottomRef.current = true;
   }, [activeChannel.id]);
+
+  useEffect(() => {
+    let isActive = true;
+    const userIdsToLoad = new Set<string>([identity.userId]);
+
+    for (const message of messages) {
+      userIdsToLoad.add(message.sender);
+
+      for (const reaction of message.reactions ?? []) {
+        for (const sender of reaction.senders) {
+          userIdsToLoad.add(sender);
+        }
+      }
+    }
+
+    for (const userId of typingUserIds) {
+      userIdsToLoad.add(userId);
+    }
+
+    const userIdsToRefresh = [...userIdsToLoad];
+
+    if (!userIdsToRefresh.length) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    void Promise.all(
+      userIdsToRefresh.map(async (userId) => {
+        try {
+          const displayName = await loadProfileDisplayName(identity, userId);
+          return [userId, displayName || getDisplayName(userId)] as const;
+        } catch {
+          return [userId, getDisplayName(userId)] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!isActive) {
+        return;
+      }
+
+      setDisplayNamesByUserId((currentNames) => {
+        let hasChanged = false;
+        const nextNames = { ...currentNames };
+
+        for (const [userId, displayName] of entries) {
+          if (nextNames[userId] !== displayName) {
+            nextNames[userId] = displayName;
+            hasChanged = true;
+          }
+        }
+
+        return hasChanged ? nextNames : currentNames;
+      });
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [displayNamesByUserId, identity, messages, typingUserIds]);
+
+  useEffect(() => {
+    setDisplayNameDraft(getKnownDisplayName(identity.userId));
+  }, [displayNamesByUserId, identity.userId]);
 
   useEffect(() => {
     let isActive = true;
@@ -752,6 +863,55 @@ export function MatrixChannelPanel({
     }
   }
 
+  async function handleSaveAccountSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const nextDisplayName = displayNameDraft.trim();
+
+    if (!nextDisplayName) {
+      setSettingsErrorText('Display name cannot be empty.');
+      return;
+    }
+
+    if (nextDisplayName.length > 32) {
+      setSettingsErrorText('Display name must be 32 characters or less.');
+      return;
+    }
+
+    const normalizedNextDisplayName = normalizeDisplayName(nextDisplayName);
+
+    if (RESERVED_DISPLAY_NAMES.has(normalizedNextDisplayName)) {
+      setSettingsErrorText('That display name is reserved.');
+      return;
+    }
+
+    const duplicateDisplayNameUser = Object.entries(displayNamesByUserId).find(([userId, displayName]) => {
+      return userId !== identity.userId && normalizeDisplayName(displayName) === normalizedNextDisplayName;
+    });
+
+    if (duplicateDisplayNameUser) {
+      setSettingsErrorText('That display name is already taken.');
+      return;
+    }
+
+    setIsSavingSettings(true);
+    setSettingsErrorText(null);
+
+    try {
+      await saveOwnDisplayName(identity, nextDisplayName);
+      setDisplayNamesByUserId((currentNames) => ({
+        ...currentNames,
+        [identity.userId]: nextDisplayName,
+      }));
+      setIsSettingsOpen(false);
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to save display name', error);
+      setSettingsErrorText('Could not save display name. Try again.');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -794,10 +954,10 @@ export function MatrixChannelPanel({
           <p>{activeChannel.description}</p>
         </div>
 
-        <div className="chat-placeholder__user">
+        <button type="button" className="chat-placeholder__user chat-placeholder__user--button" onClick={() => setIsSettingsOpen(true)}>
           <span className="status-light status-light--online" aria-hidden="true" />
-          <span>{displayName}</span>
-        </div>
+          <span>{headerDisplayName}</span>
+        </button>
       </header>
 
       <div className="matrix-chat-body">
@@ -847,10 +1007,10 @@ export function MatrixChannelPanel({
                     data-message-event-id={message.eventId}
                   >
                     <header>
-                      <strong>{getDisplayName(message.sender)}</strong>
+                      <strong>{getKnownDisplayName(message.sender)}</strong>
                       <time>{formatMessageTime(message.originServerTs)}</time>
                     </header>
-                    <p>{renderMessageTextWithMentions(parsedMessage.body, currentUserLocalpart)}</p>
+                    <p>{renderMessageTextWithMentions(parsedMessage.body, currentUserLocalpart, displayNamesByLocalpart)}</p>
                     {message.editedAt ? <span className="matrix-message__edited">edited</span> : null}
 
                     {message.reactions?.length ? (
@@ -861,7 +1021,7 @@ export function MatrixChannelPanel({
                             type="button"
                             className={hasUserReacted(message, reaction.key, identity.userId) ? 'matrix-reaction--mine' : undefined}
                             onClick={() => void handleReactToMessage(message, reaction.key)}
-                            title={reaction.senders.map(getDisplayName).join(', ')}
+                            title={reaction.senders.map(getKnownDisplayName).join(', ')}
                           >
                             <span>{reaction.key}</span>
                             <strong>{reaction.count}</strong>
@@ -914,7 +1074,7 @@ export function MatrixChannelPanel({
         {!editingMessage && replyTarget ? (
           <div className="message-reply-preview">
             <div>
-              <strong>Replying to {getDisplayName(replyTarget.sender)}</strong>
+              <strong>Replying to {getKnownDisplayName(replyTarget.sender)}</strong>
               <span>{getShortMessagePreview(parseMessageBody(replyTarget.body).body, 72)}</span>
             </div>
             <button type="button" onClick={() => setReplyTarget(null)} aria-label="Cancel reply">
@@ -927,8 +1087,8 @@ export function MatrixChannelPanel({
           <div className="message-mention-suggestions" role="listbox" aria-label="Mention suggestions">
             {mentionSuggestions.map((suggestion) => (
               <button key={suggestion.userId} type="button" onClick={() => insertMentionSuggestion(suggestion)}>
-                <span>@{suggestion.localpart}</span>
-                <small>{suggestion.displayName}</small>
+                <span>{suggestion.displayName}</span>
+                <small>Press Tab to mention</small>
               </button>
             ))}
           </div>
@@ -960,14 +1120,14 @@ export function MatrixChannelPanel({
             <button
               type="button"
               onClick={() => {
-                onOpenDirectMessage(openActionMenuMessage.sender, getDisplayName(openActionMenuMessage.sender));
+                onOpenDirectMessage(openActionMenuMessage.sender, getKnownDisplayName(openActionMenuMessage.sender));
                 setOpenActionMenu(null);
                 setReactionPickerMessageId(null);
                 setReplyTarget(null);
                 setEditingMessage(null);
               }}
             >
-              Message @{getDisplayName(openActionMenuMessage.sender)}
+              Message {getKnownDisplayName(openActionMenuMessage.sender)}
             </button>
           ) : null}
           {canPost ? (
@@ -1029,6 +1189,41 @@ export function MatrixChannelPanel({
         />
       ) : null}
 
+      {isSettingsOpen ? (
+        <div className="kodiak-modal-backdrop" role="presentation">
+          <form className="kodiak-confirm-modal kodiak-settings-modal" role="dialog" aria-modal="true" aria-labelledby="account-settings-title" onSubmit={handleSaveAccountSettings}>
+            <div className="kodiak-confirm-modal__header">
+              <p className="eyebrow eyebrow--ember">Account settings</p>
+              <h2 id="account-settings-title">Display name</h2>
+              <p>This is the name people see in chats, DMs, replies, and mentions.</p>
+            </div>
+
+            <label className="kodiak-settings-field">
+              <span>Display name</span>
+              <input
+                type="text"
+                value={displayNameDraft}
+                onChange={(event) => setDisplayNameDraft(event.target.value)}
+                maxLength={32}
+                placeholder="PapaKodiak"
+                autoFocus
+              />
+            </label>
+
+            {settingsErrorText ? <p className="kodiak-settings-error">{settingsErrorText}</p> : null}
+
+            <div className="kodiak-confirm-modal__actions">
+              <button type="button" onClick={() => setIsSettingsOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" disabled={isSavingSettings}>
+                {isSavingSettings ? 'Saving...' : 'Save display name'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {pendingDeleteMessage ? (
         <div className="kodiak-modal-backdrop" role="presentation">
           <div className="kodiak-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-message-title">
@@ -1039,7 +1234,7 @@ export function MatrixChannelPanel({
             </div>
 
             <div className="kodiak-confirm-modal__preview">
-              <strong>{getDisplayName(pendingDeleteMessage.sender)}</strong>
+              <strong>{getKnownDisplayName(pendingDeleteMessage.sender)}</strong>
               <span>{getShortMessagePreview(parseMessageBody(pendingDeleteMessage.body).body, 120)}</span>
             </div>
 

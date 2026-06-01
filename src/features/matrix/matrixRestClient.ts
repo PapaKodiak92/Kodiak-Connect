@@ -36,6 +36,10 @@ interface MatrixJoinRoomResponse {
   room_id: string;
 }
 
+interface MatrixDisplayNameResponse {
+  displayname?: string;
+}
+
 interface MatrixCreateRoomResponse {
   room_id: string;
 }
@@ -188,6 +192,34 @@ function collectEdits(events: MatrixEvent[]) {
   }
 
   return editsByEventId;
+}
+
+export async function loadProfileDisplayName(identity: MatrixLoginIdentity, userId: string) {
+  try {
+    const data = await matrixRequest<MatrixDisplayNameResponse>(
+      identity,
+      `/_matrix/client/v3/profile/${encodePathValue(userId)}/displayname`,
+    );
+
+    return data.displayname?.trim() || null;
+  } catch (error) {
+    if (error instanceof MatrixRestError && error.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function saveOwnDisplayName(identity: MatrixLoginIdentity, displayName: string) {
+  await matrixRequest<Record<string, never>>(
+    identity,
+    `/_matrix/client/v3/profile/${encodePathValue(identity.userId)}/displayname`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ displayname: displayName }),
+    },
+  );
 }
 
 export async function resolveRoomAlias(identity: MatrixLoginIdentity, alias: string) {
