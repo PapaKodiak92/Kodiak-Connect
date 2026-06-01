@@ -9,6 +9,7 @@ const PRESENCE_FILE = join(DATA_DIR, "presence.json");
 const FRIENDS_FILE = join(DATA_DIR, "friends.json");
 const PROFILES_FILE = join(DATA_DIR, "profiles.json");
 const BLOCKS_FILE = join(DATA_DIR, "blocks.json");
+const REPORTS_FILE = join(DATA_DIR, "reports.json");
 
 const PORT = Number(process.env.KODIAK_BACKEND_PORT ?? 8787);
 const ALLOWED_ORIGINS = new Set([
@@ -263,6 +264,92 @@ async function handleUnblockUser(request, response, corsHeaders) {
     ...getBlockStatePayload(blockStore, userId),
     statuses: getFriendStatuses(friendStore, userId),
   }, corsHeaders);
+}
+
+
+function createReportId() {
+  return `report_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sanitizeReportCategory(category) {
+  const allowedCategories = new Set([
+    "harassment",
+    "spam",
+    "scam",
+    "threats",
+    "impersonation",
+    "other",
+  ]);
+
+  return allowedCategories.has(category) ? category : "other";
+}
+
+async function handleCreateReport(request, response, corsHeaders) {
+  const body = await readRequestBody(request);
+  const reporterUserId = getCurrentUserId(request, body);
+  const targetUserId = body.targetUserId;
+
+  if (!isValidMatrixUserId(reporterUserId) || !isValidMatrixUserId(targetUserId) || reporterUserId === targetUserId) {
+    sendJson(response, 400, { error: "Invalid report target." }, corsHeaders);
+    return;
+  }
+
+  const details = String(body.details ?? "").trim();
+
+  if (details.length < 5) {
+    sendJson(response, 400, { error: "Please add a short description before submitting the report." }, corsHeaders);
+    return;
+  }
+
+  if (details.length > 1500) {
+    sendJson(response, 400, { error: "Report details must be 1500 characters or less." }, corsHeaders);
+    return;
+  }
+
+  const profileStore = await readJsonFile(PROFILES_FILE, {});
+  const reportsStore = await readJsonFile(REPORTS_FILE, {});
+  const targetProfile = sanitizeProfile(profileStore[targetUserId], targetUserId);
+
+  const createdAt = now();
+  const reportId = createReportId();
+
+  const report = {
+    category: sanitizeReportCategory(body.category),
+    context: String(body.context ?? "").slice(0, 500),
+    createdAt,
+    details,
+    id: reportId,
+    messageEventId: String(body.messageEventId ?? "").slice(0, 160),
+    reporterUserId,
+    roomId: String(body.roomId ?? "").slice(0, 160),
+    status: "open",
+    targetAvatarUrl: String(body.targetAvatarUrl ?? targetProfile.avatarUrl ?? "").slice(0, 500),
+    targetDisplayName: String(body.targetDisplayName ?? targetProfile.displayName ?? getDefaultDisplayName(targetUserId)).slice(0, 64),
+    targetUserId,
+    updatedAt: createdAt,
+  };
+
+  reportsStore[reportId] = report;
+  await writeJsonFile(REPORTS_FILE, reportsStore);
+
+  sendJson(response, 200, { ok: true, report }, corsHeaders);
+}
+
+async function handleListReports(request, response, corsHeaders, url) {
+  const userId = url.searchParams.get("userId") || request.headers["x-kodiak-user-id"];
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  const reportsStore = await readJsonFile(REPORTS_FILE, {});
+  const reports = Object.values(reportsStore)
+    .filter((report) => report.reporterUserId === userId)
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+    .slice(0, 50);
+
+  sendJson(response, 200, { reports }, corsHeaders);
 }
 
 async function handleProfileSearch(response, corsHeaders, url) {
@@ -608,6 +695,16 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, { ok: true, service: "kodiak-connect-backend", time: new Date().toISOString() }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/reports/create") {
+      await handleCreateReport(request, response, corsHeaders);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/reports/list") {
+      await handleListReports(request, response, corsHeaders, url);
       return;
     }
 

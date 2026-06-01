@@ -4,9 +4,11 @@ import { playKodiakSound } from '../audio/kodiakSounds';
 import {
   loadKodiakPresence,
   loadKodiakProfiles,
+  submitKodiakReport,
   saveKodiakProfile,
   sendKodiakPresenceHeartbeat,
   type KodiakPresenceState,
+  type KodiakReportCategory,
 } from '../backend/kodiakApiClient';
 import {
   createDirectMessageRoom,
@@ -466,6 +468,12 @@ export function MatrixChannelPanel({
   const [pendingUnfriendUserId, setPendingUnfriendUserId] = useState<string | null>(null);
   const [pendingBlockUserId, setPendingBlockUserId] = useState<string | null>(null);
   const [pendingUnblockUserId, setPendingUnblockUserId] = useState<string | null>(null);
+  const [pendingReportUserId, setPendingReportUserId] = useState<string | null>(null);
+  const [reportCategory, setReportCategory] = useState<KodiakReportCategory>('harassment');
+  const [reportDetails, setReportDetails] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportErrorText, setReportErrorText] = useState<string | null>(null);
+  const [reportSuccessText, setReportSuccessText] = useState<string | null>(null);
   const [areMessageSoundsEnabled, setAreMessageSoundsEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_MESSAGES') !== 'false');
   const [isSentSoundEnabled, setIsSentSoundEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_SENT') !== 'false');
   const [isReceivedSoundEnabled, setIsReceivedSoundEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_RECEIVED') !== 'false');
@@ -1558,6 +1566,53 @@ export function MatrixChannelPanel({
     }
   }
 
+  function requestReportUser(userId: string) {
+    setPendingReportUserId(userId);
+    setReportCategory('harassment');
+    setReportDetails('');
+    setReportErrorText(null);
+    setReportSuccessText(null);
+  }
+
+  async function handleSubmitReportUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!pendingReportUserId) {
+      return;
+    }
+
+    const trimmedDetails = reportDetails.trim();
+
+    if (trimmedDetails.length < 5) {
+      setReportErrorText('Please add a short description before submitting.');
+      return;
+    }
+
+    setIsSubmittingReport(true);
+    setReportErrorText(null);
+    setReportSuccessText(null);
+
+    try {
+      await submitKodiakReport(identity, {
+        category: reportCategory,
+        context: activeChannel.name,
+        details: trimmedDetails,
+        roomId: roomId ?? '',
+        targetAvatarUrl: avatarUrlsByUserId[pendingReportUserId] ?? '',
+        targetDisplayName: getKnownDisplayName(pendingReportUserId),
+        targetUserId: pendingReportUserId,
+      });
+
+      setReportSuccessText('Report submitted. Kodiak Trust & Safety can review it.');
+      setReportDetails('');
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to submit report', error);
+      setReportErrorText(error instanceof Error ? error.message : 'Could not submit report. Try again.');
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  }
+
   function requestBlockUser(userId: string) {
     setPendingBlockUserId(userId);
   }
@@ -2161,7 +2216,15 @@ export function MatrixChannelPanel({
                   </button>
                 )
               ) : null}
-              <button type="button" className="kodiak-profile-card__danger" disabled>Report Soon</button>
+              {openProfileUserId !== identity.userId ? (
+                <button
+                  type="button"
+                  className="kodiak-profile-card__danger"
+                  onClick={() => requestReportUser(openProfileUserId)}
+                >
+                  Report
+                </button>
+              ) : null}
             </div>
 
             {profileActionErrorText ? (
@@ -2170,6 +2233,90 @@ export function MatrixChannelPanel({
               </p>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {pendingReportUserId ? (
+        <div className="kodiak-modal-backdrop kodiak-modal-backdrop--stacked" role="presentation" onClick={() => setPendingReportUserId(null)}>
+          <form
+            className="kodiak-report-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-modal-title"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => void handleSubmitReportUser(event)}
+          >
+            <div className="kodiak-report-modal__header">
+              <p className="eyebrow eyebrow--ember">Trust & Safety</p>
+              <h2 id="report-modal-title">Report {getKnownDisplayName(pendingReportUserId)}</h2>
+              <p>Send a report to Kodiak Trust & Safety. Blocking protects you; reporting helps protect the platform.</p>
+            </div>
+
+            <div className="kodiak-report-modal__user">
+              {renderUserAvatar(pendingReportUserId, 'matrix-avatar--suggestion')}
+              <div>
+                <strong>{getKnownDisplayName(pendingReportUserId)}</strong>
+                <span>{pendingReportUserId}</span>
+              </div>
+            </div>
+
+            {reportSuccessText ? (
+              <div className="kodiak-report-modal__success" role="status">
+                {reportSuccessText}
+              </div>
+            ) : (
+              <>
+                <label className="kodiak-report-modal__field">
+                  <span>Reason</span>
+                  <select value={reportCategory} onChange={(event) => setReportCategory(event.target.value as KodiakReportCategory)}>
+                    <option value="harassment">Harassment or abuse</option>
+                    <option value="spam">Spam</option>
+                    <option value="scam">Scam or suspicious behavior</option>
+                    <option value="threats">Threats or safety concern</option>
+                    <option value="impersonation">Impersonation</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+
+                <label className="kodiak-report-modal__field">
+                  <span>Details</span>
+                  <textarea
+                    value={reportDetails}
+                    onChange={(event) => setReportDetails(event.target.value)}
+                    placeholder="What happened?"
+                    maxLength={1500}
+                    rows={5}
+                  />
+                  <small>{reportDetails.length}/1500</small>
+                </label>
+
+                {reportErrorText ? (
+                  <p className="kodiak-report-modal__error" role="alert">
+                    {reportErrorText}
+                  </p>
+                ) : null}
+              </>
+            )}
+
+            <div className="kodiak-report-modal__actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingReportUserId(null);
+                  setReportErrorText(null);
+                  setReportSuccessText(null);
+                }}
+              >
+                {reportSuccessText ? 'Done' : 'Cancel'}
+              </button>
+
+              {!reportSuccessText ? (
+                <button type="submit" className="kodiak-report-modal__danger" disabled={isSubmittingReport}>
+                  {isSubmittingReport ? 'Submitting...' : 'Submit Report'}
+                </button>
+              ) : null}
+            </div>
+          </form>
         </div>
       ) : null}
 

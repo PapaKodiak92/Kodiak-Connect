@@ -2,6 +2,23 @@
 
 export type KodiakPresenceState = 'online' | 'idle' | 'offline';
 export type KodiakFriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
+export type KodiakReportCategory = 'harassment' | 'spam' | 'scam' | 'threats' | 'impersonation' | 'other';
+
+export interface KodiakReport {
+  category: KodiakReportCategory;
+  context?: string;
+  createdAt: number;
+  details: string;
+  id: string;
+  messageEventId?: string;
+  reporterUserId: string;
+  roomId?: string;
+  status: 'open' | 'reviewed' | 'dismissed';
+  targetAvatarUrl?: string;
+  targetDisplayName: string;
+  targetUserId: string;
+  updatedAt: number;
+}
 
 export interface KodiakProfile {
   avatarUrl?: string;
@@ -35,6 +52,11 @@ interface KodiakProfilesResponse {
 
 interface KodiakProfileResponse {
   profile?: KodiakProfile;
+}
+
+interface KodiakReportsResponse {
+  report?: KodiakReport;
+  reports?: KodiakReport[];
 }
 
 interface KodiakBlockStateResponse {
@@ -257,4 +279,38 @@ export async function unblockKodiakUser(identity: MatrixLoginIdentity, targetUse
     ],
     statuses: data.statuses ?? {},
   };
+}
+
+
+export async function submitKodiakReport(
+  identity: MatrixLoginIdentity,
+  report: {
+    category: KodiakReportCategory;
+    context?: string;
+    details: string;
+    messageEventId?: string;
+    roomId?: string;
+    targetAvatarUrl?: string;
+    targetDisplayName?: string;
+    targetUserId: string;
+  },
+) {
+  const data = await postKodiak<KodiakReportsResponse>(identity, '/api/reports/create', report);
+  return data.report ?? null;
+}
+
+export async function loadKodiakReports(identity: MatrixLoginIdentity) {
+  const response = await fetch(
+    `${KODIAK_API_BASE_URL}/api/reports/list?userId=${encodeURIComponent(identity.userId)}`,
+    {
+      headers: getHeaders(identity),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error('Kodiak reports request failed.');
+  }
+
+  const data = (await response.json()) as KodiakReportsResponse;
+  return data.reports ?? [];
 }
