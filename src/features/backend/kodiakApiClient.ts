@@ -4,7 +4,7 @@ export type KodiakPresenceState = 'online' | 'idle' | 'offline';
 export type KodiakFriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
 export type KodiakReportCategory = 'harassment' | 'spam' | 'scam' | 'threats' | 'impersonation' | 'other';
 export type KodiakReportStatus = 'open' | 'reviewed' | 'dismissed';
-export type KodiakReportActionType = 'reply' | 'note' | 'status';
+export type KodiakReportActionType = 'reply' | 'note' | 'status' | 'archive' | 'delete';
 
 export interface KodiakReportAction {
   actorUserId: string;
@@ -19,6 +19,8 @@ export interface KodiakReportAction {
 
 export interface KodiakReport {
   actions?: KodiakReportAction[];
+  archivedAt?: number;
+  archivedByUserId?: string;
   category: KodiakReportCategory;
   context?: string;
   createdAt: number;
@@ -70,6 +72,7 @@ interface KodiakProfileResponse {
 
 interface KodiakReportsResponse {
   canViewAllReports?: boolean;
+  ok?: boolean;
   report?: KodiakReport;
   reports?: KodiakReport[];
 }
@@ -311,9 +314,9 @@ export async function submitKodiakReport(
   return data.report ?? null;
 }
 
-export async function loadKodiakReports(identity: MatrixLoginIdentity) {
+export async function loadKodiakReports(identity: MatrixLoginIdentity, includeArchived = false) {
   const response = await fetch(
-    `${KODIAK_API_BASE_URL}/api/reports/list?userId=${encodeURIComponent(identity.userId)}`,
+    `${KODIAK_API_BASE_URL}/api/reports/list?userId=${encodeURIComponent(identity.userId)}&includeArchived=${includeArchived ? 'true' : 'false'}`,
     {
       headers: getHeaders(identity),
     },
@@ -358,4 +361,21 @@ export async function updateKodiakReportStatus(
   });
 
   return data.report ?? null;
+}
+
+export async function archiveKodiakReport(identity: MatrixLoginIdentity, reportId: string, note?: string) {
+  const data = await postKodiak<KodiakReportsResponse>(identity, '/api/reports/archive', {
+    note: note ?? '',
+    reportId,
+  });
+
+  return data.report ?? null;
+}
+
+export async function deleteKodiakReport(identity: MatrixLoginIdentity, reportId: string) {
+  await postKodiak<KodiakReportsResponse>(identity, '/api/reports/delete', {
+    reportId,
+  });
+
+  return true;
 }
