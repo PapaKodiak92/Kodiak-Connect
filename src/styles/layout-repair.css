@@ -1,17 +1,46 @@
 /* Kodiak Connect staging layout repair pass
    Keep this file imported last so it can cleanly override older stacked CSS experiments. */
 
+:root {
+  --workspace-top-offset: 0px;
+}
+
+body:has(.window-titlebar) {
+  --workspace-top-offset: 42px;
+}
+
+.workspace-app-shell {
+  padding-top: var(--workspace-top-offset) !important;
+}
+
+.workspace-app-shell::before {
+  inset: var(--workspace-top-offset) 0 0 0 !important;
+}
+
+.workspace-app-shell::after {
+  top: calc(var(--workspace-top-offset) + var(--workspace-header-height)) !important;
+}
+
+.channel-sidebar,
+.chat-placeholder {
+  height: calc(100vh - var(--workspace-top-offset)) !important;
+}
+
+.chat-placeholder {
+  min-height: 0 !important;
+}
+
 .policy-modal-backdrop {
   align-items: start !important;
   justify-items: center !important;
   z-index: 1400 !important;
   overflow: auto !important;
-  padding: calc(var(--workspace-top-offset, 42px) + 0.9rem) 1rem 1rem !important;
+  padding: calc(var(--workspace-top-offset) + 0.9rem) 1rem 1rem !important;
 }
 
 .policy-modal {
   width: min(760px, calc(100vw - 2rem)) !important;
-  max-height: calc(100dvh - var(--workspace-top-offset, 42px) - 2rem) !important;
+  max-height: calc(100dvh - var(--workspace-top-offset) - 2rem) !important;
   gap: 0.95rem !important;
   overscroll-behavior: contain !important;
   padding: clamp(1rem, 2.4vw, 1.5rem) !important;
@@ -64,7 +93,7 @@
   overflow: auto !important;
   background: rgba(2, 6, 23, 0.78) !important;
   backdrop-filter: blur(12px) !important;
-  padding: calc(var(--workspace-top-offset, 42px) + 1rem) 1rem 1rem !important;
+  padding: calc(var(--workspace-top-offset) + 1rem) 1rem 1rem !important;
 }
 
 .kodiak-modal-backdrop--stacked {
@@ -77,7 +106,7 @@
 .kodiak-start-dm-modal {
   position: relative !important;
   width: min(31rem, calc(100vw - 2rem)) !important;
-  max-height: calc(100dvh - var(--workspace-top-offset, 42px) - 2rem) !important;
+  max-height: calc(100dvh - var(--workspace-top-offset) - 2rem) !important;
   overflow: auto !important;
   transform: none !important;
 }
@@ -150,7 +179,7 @@
   .policy-modal-backdrop,
   .kodiak-modal-backdrop {
     align-items: start !important;
-    padding: calc(var(--workspace-top-offset, 42px) + 0.75rem) 0.75rem 0.75rem !important;
+    padding: calc(var(--workspace-top-offset) + 0.75rem) 0.75rem 0.75rem !important;
   }
 
   .policy-modal__brand,
