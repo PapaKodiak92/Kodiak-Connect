@@ -107,16 +107,15 @@ const footerLinks = [
 ];
 
 async function openExternalLink(url: string) {
+  if (url.startsWith('mailto:')) {
+    window.location.href = url;
+    return;
+  }
+
   try {
     await openUrl(url);
   } catch (error) {
     console.error('[Kodiak Connect] Failed to open footer link', error);
-
-    if (url.startsWith('mailto:')) {
-      window.location.href = url;
-      return;
-    }
-
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
