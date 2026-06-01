@@ -1,28 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import {
+  acceptKodiakFriendRequest,
+  cancelKodiakFriendRequest,
+  declineKodiakFriendRequest,
+  loadKodiakFriendState,
+  removeKodiakFriend,
+  sendKodiakFriendRequest,
+} from '../backend/kodiakApiClient';
+import {
   createDirectMessageRoom,
   joinRoomByAlias,
   loadProfileDisplayName,
-  loadRecentFriendEvents,
   loadRecentMessages,
   resolveDirectMessageRoom,
   saveDirectMessageRoom,
-  sendFriendRequest,
-  sendFriendRequestCancellation,
-  sendFriendResponse,
 } from '../matrix/matrixRestClient';
 import { OfficialSpaceAcknowledgementModal } from '../policy/OfficialSpaceAcknowledgementModal';
 import {
   hasCurrentOfficialSpaceAcknowledgement,
   saveOfficialSpaceAcknowledgement,
 } from '../policy/policyAcknowledgementStorage';
+import { playKodiakSound } from '../audio/kodiakSounds';
 import { ChannelSidebar, type ChannelActivityById } from './ChannelSidebar';
 import { ChatPlaceholder } from './ChatPlaceholder';
 import { MatrixChannelPanel } from './MatrixChannelPanel';
 import { ServerRail } from './ServerRail';
 import { officialSpace } from './workspaceData';
-import { playKodiakSound } from '../audio/kodiakSounds';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 interface WorkspaceShellProps {
@@ -236,6 +240,8 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
   );
   const notifiedLatestTsByChannelRef = useRef<Record<string, number>>({});
   const channelActivityBackoffUntilRef = useRef<Record<string, number>>({});
+  const hasLoadedFriendStateRef = useRef(false);
+  const incomingFriendRequestUserIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     friendStatusByUserIdRef.current = friendStatusByUserId;
@@ -378,108 +384,45 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
     let isActive = true;
 
     async function refreshFriendState() {
-      const knownUserIds = new Set<string>();
+      try {
+        const statuses = await loadKodiakFriendState(identity);
 
-      for (const localpart of STAGING_USER_LOCALPARTS) {
-        const userId = getMatrixUserIdFromLocalpart(localpart);
-
-        if (userId !== identity.userId) {
-          knownUserIds.add(userId);
+        if (!isActive) {
+          return;
         }
-      }
 
-      for (const channel of directMessageChannels) {
-        if (channel.matrixDmUserId && channel.matrixDmUserId !== identity.userId) {
-          knownUserIds.add(channel.matrixDmUserId);
-        }
-      }
+        const incomingUserIds = Object.entries(statuses)
+          .filter(([, status]) => status === 'incoming')
+          .map(([userId]) => userId);
 
-      const statusEntries = await Promise.all(
-        [...knownUserIds].map(async (userId) => {
-          try {
-            const roomId = await resolveSilentDirectMessageRoom(userId, dmDisplayNamesByUserId[userId] || getDisplayNameFromUserId(userId), false);
+        if (!hasLoadedFriendStateRef.current) {
+          hasLoadedFriendStateRef.current = true;
+        } else {
+          const hasNewIncomingRequest = incomingUserIds.some((userId) => !incomingFriendRequestUserIdsRef.current.has(userId));
 
-            if (!roomId) {
-              return [userId, 'none'] as const;
-            }
-
-            const friendEvents = await loadRecentFriendEvents(identity, roomId);
-            let status: FriendStatus = 'none';
-            let currentUserRequestAt = 0;
-            let otherUserRequestAt = 0;
-
-            for (const event of friendEvents) {
-              const currentUserRequested = event.requesterUserId === identity.userId && event.targetUserId === userId;
-              const otherUserRequested = event.requesterUserId === userId && event.targetUserId === identity.userId;
-
-              if (!currentUserRequested && !otherUserRequested) {
-                continue;
-              }
-
-              if (event.type === 'request') {
-                if (currentUserRequested) {
-                  currentUserRequestAt = event.createdAt;
-                }
-
-                if (otherUserRequested) {
-                  otherUserRequestAt = event.createdAt;
-                }
-
-                continue;
-              }
-
-              if (event.type === 'response') {
-                if (event.response === 'accept') {
-                  status = 'friends';
-                } else {
-                  status = 'none';
-                  currentUserRequestAt = 0;
-                  otherUserRequestAt = 0;
-                }
-              }
-            }
-
-            if (status !== 'friends') {
-              if (currentUserRequestAt && otherUserRequestAt) {
-                status = 'incoming';
-              } else if (otherUserRequestAt) {
-                status = 'incoming';
-              } else if (currentUserRequestAt) {
-                status = 'outgoing';
-              } else {
-                status = 'none';
-              }
-            }
-
-            return [userId, status] as const;
-          } catch (error) {
-            console.warn('[Kodiak Connect] Friend state refresh failed', userId, error);
-            return [userId, friendStatusByUserIdRef.current[userId] ?? 'none'] as const;
+          if (hasNewIncomingRequest && window.localStorage.getItem('KC_NOTIFY_SOUND') !== 'false') {
+            playKodiakSound('notify', 0.72);
           }
-        }),
-      );
+        }
 
-      if (!isActive) {
-        return;
+        incomingFriendRequestUserIdsRef.current = new Set(incomingUserIds);
+        setFriendStatusByUserId(statuses);
+      } catch (error) {
+        console.warn('[Kodiak Connect] Backend friend state refresh failed', error);
       }
-
-      setFriendStatusByUserId((currentStatuses) => ({
-        ...currentStatuses,
-        ...Object.fromEntries(statusEntries),
-      }));
     }
 
     void refreshFriendState();
 
     const intervalId = window.setInterval(() => {
       void refreshFriendState();
-    }, 15000);
+    }, 10_000);
 
     return () => {
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [directMessageChannels, dmDisplayNamesByUserId, identity]);
+  }, [identity]);
 
   const markChannelSeen = useCallback(
     (channelId: string, latestTs: number) => {
@@ -703,79 +646,29 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
     setIsStartDmOpen(false);
   }
 
-  async function handleSendFriendRequest(userId: string, displayName = getDisplayNameFromUserId(userId)) {
-    const roomId = await resolveSilentDirectMessageRoom(userId, dmDisplayNamesByUserId[userId] || displayName, true);
-
-    if (!roomId) {
-      throw new Error('Could not create friend request room.');
-    }
-
-    await sendFriendRequest(identity, roomId, userId);
-
-    setFriendStatusByUserId((currentStatuses) => ({
-      ...currentStatuses,
-      [userId]: 'outgoing',
-    }));
+  async function handleSendFriendRequest(userId: string, _displayName = getDisplayNameFromUserId(userId)) {
+    const statuses = await sendKodiakFriendRequest(identity, userId);
+    setFriendStatusByUserId(statuses);
   }
 
   async function handleAcceptFriendRequest(userId: string) {
-    const roomId = await resolveSilentDirectMessageRoom(userId, dmDisplayNamesByUserId[userId] || getDisplayNameFromUserId(userId), false);
-
-    if (!roomId) {
-      throw new Error('Could not find friend request room.');
-    }
-
-    await sendFriendResponse(identity, roomId, userId, 'accept');
-
-    setFriendStatusByUserId((currentStatuses) => ({
-      ...currentStatuses,
-      [userId]: 'friends',
-    }));
+    const statuses = await acceptKodiakFriendRequest(identity, userId);
+    setFriendStatusByUserId(statuses);
   }
 
   async function handleDeclineFriendRequest(userId: string) {
-    const roomId = await resolveSilentDirectMessageRoom(userId, dmDisplayNamesByUserId[userId] || getDisplayNameFromUserId(userId), false);
-
-    if (!roomId) {
-      throw new Error('Could not find friend request room.');
-    }
-
-    await sendFriendResponse(identity, roomId, userId, 'decline');
-
-    setFriendStatusByUserId((currentStatuses) => ({
-      ...currentStatuses,
-      [userId]: 'none',
-    }));
-  }
-
-  async function handleUnfriendUser(userId: string) {
-    const roomId = await resolveSilentDirectMessageRoom(userId, dmDisplayNamesByUserId[userId] || getDisplayNameFromUserId(userId), false);
-
-    if (!roomId) {
-      throw new Error('Could not find friend room.');
-    }
-
-    await sendFriendResponse(identity, roomId, userId, 'remove');
-
-    setFriendStatusByUserId((currentStatuses) => ({
-      ...currentStatuses,
-      [userId]: 'none',
-    }));
+    const statuses = await declineKodiakFriendRequest(identity, userId);
+    setFriendStatusByUserId(statuses);
   }
 
   async function handleCancelFriendRequest(userId: string) {
-    const roomId = await resolveSilentDirectMessageRoom(userId, dmDisplayNamesByUserId[userId] || getDisplayNameFromUserId(userId), false);
+    const statuses = await cancelKodiakFriendRequest(identity, userId);
+    setFriendStatusByUserId(statuses);
+  }
 
-    if (!roomId) {
-      throw new Error('Could not find outgoing friend request room.');
-    }
-
-    await sendFriendRequestCancellation(identity, roomId, userId);
-
-    setFriendStatusByUserId((currentStatuses) => ({
-      ...currentStatuses,
-      [userId]: 'none',
-    }));
+  async function handleUnfriendUser(userId: string) {
+    const statuses = await removeKodiakFriend(identity, userId);
+    setFriendStatusByUserId(statuses);
   }
 
   function handleAcknowledgeOfficialSpace() {
