@@ -7,6 +7,9 @@ import {
   sendTextMessage,
   type MatrixTextMessage,
 } from '../matrix/matrixRestClient';
+import { MentionSuggestions } from './MentionSuggestions';
+import { applyMentionSuggestion, getActiveMentionSearch, getMentionSuggestions } from './mentionSuggestions';
+import type { MentionSuggestion } from './mentionSuggestions';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 interface MatrixChannelPanelProps {
@@ -225,6 +228,8 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
 
   const displayName = getDisplayName(identity.userId);
   const currentUserLocalpart = getUserLocalpart(identity.userId);
+  const activeMentionSearch = getActiveMentionSearch(draftMessage);
+  const mentionSuggestions = getMentionSuggestions(messages, currentUserLocalpart, activeMentionSearch);
   const canPost = canPostInChannel(activeChannel, identity.userId);
 
   const refreshMessages = useCallback(
@@ -317,6 +322,10 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
     window.setTimeout(() => {
       targetElement.classList.remove('matrix-message--focused');
     }, 1600);
+  }
+
+  function insertMentionSuggestion(suggestion: MentionSuggestion) {
+    setDraftMessage((currentDraft) => applyMentionSuggestion(currentDraft, getActiveMentionSearch(currentDraft), suggestion));
   }
 
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
@@ -432,6 +441,8 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
             </button>
           </div>
         ) : null}
+
+        <MentionSuggestions suggestions={mentionSuggestions} onSelect={insertMentionSuggestion} />
 
         <input
           type="text"
