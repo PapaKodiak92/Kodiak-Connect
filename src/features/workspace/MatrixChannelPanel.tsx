@@ -30,6 +30,7 @@ import {
   type MatrixTextMessage,
 } from '../matrix/matrixRestClient';
 import { playKodiakSound } from '../audio/kodiakSounds';
+import { loadKodiakPresence, sendKodiakPresenceHeartbeat, type KodiakPresenceState } from '../backend/kodiakApiClient';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 type FriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
@@ -39,10 +40,14 @@ interface MatrixChannelPanelProps {
   activeSpace: WorkspaceSpace;
   identity: MatrixLoginIdentity;
   friendStatusByUserId?: Record<string, FriendStatus>;
+  isFriendCenterOpen?: boolean;
+  onCloseFriendCenter?: () => void;
   onOpenDirectMessage?: (userId: string, displayName: string) => void;
   onSendFriendRequest?: (userId: string, displayName: string) => Promise<void> | void;
   onAcceptFriendRequest?: (userId: string) => Promise<void> | void;
   onDeclineFriendRequest?: (userId: string) => Promise<void> | void;
+  onCancelFriendRequest?: (userId: string) => Promise<void> | void;
+  onUnfriendUser?: (userId: string) => Promise<void> | void;
 }
 
 interface MentionSearch {
@@ -392,10 +397,14 @@ export function MatrixChannelPanel({
   activeSpace,
   identity,
   friendStatusByUserId = {},
+  isFriendCenterOpen = false,
+  onCloseFriendCenter,
   onOpenDirectMessage,
   onSendFriendRequest,
   onAcceptFriendRequest,
   onDeclineFriendRequest,
+  onCancelFriendRequest,
+  onUnfriendUser,
 }: MatrixChannelPanelProps) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrixTextMessage[]>([]);
@@ -407,7 +416,7 @@ export function MatrixChannelPanel({
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const [roomMemberUserIds, setRoomMemberUserIds] = useState<string[]>([]);
-  const [presenceByUserId, setPresenceByUserId] = useState<Record<string, 'online' | 'offline' | 'unavailable'>>({});
+  const [presenceByUserId, setPresenceByUserId] = useState<Record<string, KodiakPresenceState | 'unavailable'>>({});
   const [isMemberPanelOpen, setIsMemberPanelOpen] = useState(true);
   const [displayNamesByUserId, setDisplayNamesByUserId] = useState<Record<string, string>>({});
   const [avatarUrlsByUserId, setAvatarUrlsByUserId] = useState<Record<string, string>>({});
@@ -421,6 +430,7 @@ export function MatrixChannelPanel({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsErrorText, setSettingsErrorText] = useState<string | null>(null);
   const [friendActionUserId, setFriendActionUserId] = useState<string | null>(null);
+  const [pendingUnfriendUserId, setPendingUnfriendUserId] = useState<string | null>(null);
   const [areMessageSoundsEnabled, setAreMessageSoundsEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_MESSAGES') !== 'false');
   const [isSentSoundEnabled, setIsSentSoundEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_SENT') !== 'false');
   const [isReceivedSoundEnabled, setIsReceivedSoundEnabled] = useState(() => window.localStorage.getItem('KC_SOUND_RECEIVED') !== 'false');
@@ -499,7 +509,7 @@ export function MatrixChannelPanel({
       return 'Online';
     }
 
-    if (presence === 'unavailable') {
+    if (presence === 'unavailable' || presence === 'idle') {
       return 'Idle';
     }
 
@@ -543,6 +553,7 @@ export function MatrixChannelPanel({
   const channelHeadingPrefix = activeChannel.kind === 'dm' ? '' : '#';
   const channelEyebrowLabel = activeChannel.kind === 'dm' ? 'Direct Message' : activeSpace.name;
   const headerDisplayName = getKnownDisplayName(identity.userId);
+  const roomMemberPresenceKey = roomMemberUserIds.join('|');
 
   const refreshProfileBios = useCallback(
     async (targetRoomId: string) => {
@@ -859,37 +870,50 @@ export function MatrixChannelPanel({
   }, [activeChannel, activeChannel.matrixAlias, identity, refreshMessages]);
 
   useEffect(() => {
-    void setOwnPresence(identity, 'online');
+    let isActive = true;
 
-    const handleBeforeUnload = () => {
-      void setOwnPresence(identity, 'offline');
-    };
+    function sendPresenceHeartbeat() {
+      if (!isActive) {
+        return;
+      }
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+      void sendKodiakPresenceHeartbeat(identity, getKnownDisplayName(identity.userId), getKnownAvatarUrl(identity.userId)).catch((error) => {
+        console.warn('[Kodiak Connect] Kodiak presence heartbeat failed', error);
+      });
+    }
+
+    sendPresenceHeartbeat();
+
+    const heartbeatIntervalId = window.setInterval(sendPresenceHeartbeat, 30_000);
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      void setOwnPresence(identity, 'offline');
+      isActive = false;
+      window.clearInterval(heartbeatIntervalId);
     };
-  }, [identity]);
+  }, [avatarUrlsByUserId, displayNamesByUserId, identity]);
 
   useEffect(() => {
-    if (!roomMemberUserIds.length) {
+    const presenceUserIds = roomMemberPresenceKey ? roomMemberPresenceKey.split('|').filter(Boolean) : [];
+
+    if (!presenceUserIds.length) {
       return undefined;
     }
 
     let isActive = true;
 
     async function refreshMemberPresence() {
-      const presenceEntries = await Promise.all(
-        roomMemberUserIds.map(async (userId) => {
-          if (userId === identity.userId) {
-            return [userId, 'online'] as const;
-          }
+      const kodiakPresenceByUserId = await loadKodiakPresence(identity, presenceUserIds).catch((error) => {
+        console.warn('[Kodiak Connect] Kodiak presence lookup failed', error);
+        return {} as Record<string, KodiakPresenceState>;
+      });
 
-          return [userId, await loadUserPresence(identity, userId)] as const;
-        }),
-      );
+      const presenceEntries = presenceUserIds.map((userId) => {
+        if (userId === identity.userId) {
+          return [userId, 'online'] as const;
+        }
+
+        return [userId, kodiakPresenceByUserId[userId] ?? 'offline'] as const;
+      });
 
       if (!isActive) {
         return;
@@ -914,13 +938,13 @@ export function MatrixChannelPanel({
 
     const presenceIntervalId = window.setInterval(() => {
       void refreshMemberPresence();
-    }, 10000);
+    }, 60000);
 
     return () => {
       isActive = false;
       window.clearInterval(presenceIntervalId);
     };
-  }, [identity, roomMemberUserIds]);
+  }, [identity, roomMemberPresenceKey]);
 
   useEffect(() => {
     if (!roomId) {
@@ -1363,6 +1387,47 @@ export function MatrixChannelPanel({
     } catch (error) {
       console.error('[Kodiak Connect] Failed to decline friend request', error);
       setErrorText('Could not decline friend request. Try again.');
+    } finally {
+      setFriendActionUserId(null);
+    }
+  }
+
+  function requestUnfriendUser(userId: string) {
+    setPendingUnfriendUserId(userId);
+  }
+
+  async function handleCancelFriendRequestClick(userId: string) {
+    if (!onCancelFriendRequest) {
+      return;
+    }
+
+    setFriendActionUserId(userId);
+    setErrorText(null);
+
+    try {
+      await onCancelFriendRequest(userId);
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to cancel friend request', error);
+      setErrorText('Could not cancel friend request. Try again.');
+    } finally {
+      setFriendActionUserId(null);
+    }
+  }
+
+  async function handleUnfriendUserClick(userId: string) {
+    if (!onUnfriendUser) {
+      return;
+    }
+
+    setFriendActionUserId(userId);
+    setErrorText(null);
+
+    try {
+      await onUnfriendUser(userId);
+      setPendingUnfriendUserId(null);
+    } catch (error) {
+      console.error('[Kodiak Connect] Failed to unfriend user', error);
+      setErrorText('Could not remove friend. Try again.');
     } finally {
       setFriendActionUserId(null);
     }
@@ -1897,7 +1962,14 @@ export function MatrixChannelPanel({
                 getFriendStatus(openProfileUserId) === 'friends' ? (
                   <button type="button" disabled>Friends</button>
                 ) : getFriendStatus(openProfileUserId) === 'outgoing' ? (
-                  <button type="button" disabled>Request sent</button>
+                  <button
+                    type="button"
+                    className="kodiak-profile-card__danger"
+                    disabled={friendActionUserId === openProfileUserId || !onCancelFriendRequest}
+                    onClick={() => void handleCancelFriendRequestClick(openProfileUserId)}
+                  >
+                    {friendActionUserId === openProfileUserId ? 'Canceling...' : 'Cancel Request'}
+                  </button>
                 ) : getFriendStatus(openProfileUserId) === 'incoming' ? (
                   <>
                     <button type="button" disabled={friendActionUserId === openProfileUserId} onClick={() => void handleAcceptFriendRequestClick(openProfileUserId)}>
@@ -1915,6 +1987,200 @@ export function MatrixChannelPanel({
               ) : null}
               <button type="button" disabled>Block Soon</button>
               <button type="button" className="kodiak-profile-card__danger" disabled>Report Soon</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {pendingUnfriendUserId ? (
+        <div className="kodiak-modal-backdrop kodiak-modal-backdrop--stacked" role="presentation" onClick={() => setPendingUnfriendUserId(null)}>
+          <div
+            className="kodiak-unfriend-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unfriend-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="kodiak-unfriend-modal__header">
+              <p className="eyebrow eyebrow--ember">Friend Center</p>
+              <h2 id="unfriend-modal-title">Unfriend {getKnownDisplayName(pendingUnfriendUserId)}?</h2>
+              <p>This removes them from your Friend Center. You can send another request later.</p>
+            </div>
+
+            <div className="kodiak-unfriend-modal__user">
+              {renderUserAvatar(pendingUnfriendUserId, 'matrix-avatar--suggestion')}
+              <div>
+                <strong>{getKnownDisplayName(pendingUnfriendUserId)}</strong>
+                <span>Friend</span>
+              </div>
+            </div>
+
+            <div className="kodiak-unfriend-modal__actions">
+              <button type="button" onClick={() => setPendingUnfriendUserId(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="kodiak-unfriend-modal__danger"
+                disabled={friendActionUserId === pendingUnfriendUserId}
+                onClick={() => void handleUnfriendUserClick(pendingUnfriendUserId)}
+              >
+                {friendActionUserId === pendingUnfriendUserId ? 'Removing...' : 'Unfriend'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isFriendCenterOpen ? (
+        <div className="kodiak-modal-backdrop" role="presentation" onClick={onCloseFriendCenter}>
+          <div
+            className="kodiak-friend-center-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="friend-center-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="kodiak-friend-center-modal__close" aria-label="Close Friend Center" onClick={onCloseFriendCenter}>
+              ×
+            </button>
+
+            <div className="kodiak-friend-center-modal__header">
+              <p className="eyebrow eyebrow--ember">Social</p>
+              <h2 id="friend-center-title">Friend Center</h2>
+              <p>Manage friends, incoming requests, and outgoing requests.</p>
+            </div>
+
+            <div className="kodiak-friend-center-modal__body">
+              <section className="kodiak-friend-center-section">
+                <div className="kodiak-friend-center-section__heading">
+                  <span>Incoming Requests</span>
+                  <strong>{incomingFriendUserIds.length}</strong>
+                </div>
+
+                {incomingFriendUserIds.length ? (
+                  <div className="kodiak-friend-center-list">
+                    {incomingFriendUserIds.map((userId) => (
+                      <div key={userId} className="kodiak-friend-center-row">
+                        {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
+                        <div>
+                          <strong>{getKnownDisplayName(userId)}</strong>
+                          <small>Wants to be friends</small>
+                        </div>
+                        <button type="button" disabled={friendActionUserId === userId} onClick={() => void handleAcceptFriendRequestClick(userId)}>
+                          Accept
+                        </button>
+                        <button type="button" disabled={friendActionUserId === userId} onClick={() => void handleDeclineFriendRequestClick(userId)}>
+                          Decline
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onCloseFriendCenter?.();
+                            setOpenProfileUserId(userId);
+                          }}
+                        >
+                          Profile
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="kodiak-friend-center-empty">No incoming friend requests.</p>
+                )}
+              </section>
+
+              <section className="kodiak-friend-center-section">
+                <div className="kodiak-friend-center-section__heading">
+                  <span>Friends</span>
+                  <strong>{friendUserIds.length}</strong>
+                </div>
+
+                {friendUserIds.length ? (
+                  <div className="kodiak-friend-center-list">
+                    {friendUserIds.map((userId) => (
+                      <div key={userId} className="kodiak-friend-center-row">
+                        {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
+                        <div>
+                          <strong>{getKnownDisplayName(userId)}</strong>
+                          <small>Friend</small>
+                        </div>
+                        {onOpenDirectMessage ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onOpenDirectMessage(userId, getKnownDisplayName(userId));
+                              onCloseFriendCenter?.();
+                            }}
+                          >
+                            Message
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onCloseFriendCenter?.();
+                            setOpenProfileUserId(userId);
+                          }}
+                        >
+                          Profile
+                        </button>
+                        <button
+                          type="button"
+                          className="kodiak-friend-center-row__danger"
+                          disabled={friendActionUserId === userId}
+                          onClick={() => requestUnfriendUser(userId)}
+                        >
+                          {friendActionUserId === userId ? 'Removing...' : 'Unfriend'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="kodiak-friend-center-empty">No friends yet.</p>
+                )}
+              </section>
+
+              <section className="kodiak-friend-center-section">
+                <div className="kodiak-friend-center-section__heading">
+                  <span>Outgoing Requests</span>
+                  <strong>{outgoingFriendUserIds.length}</strong>
+                </div>
+
+                {outgoingFriendUserIds.length ? (
+                  <div className="kodiak-friend-center-list">
+                    {outgoingFriendUserIds.map((userId) => (
+                      <div key={userId} className="kodiak-friend-center-row">
+                        {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
+                        <div>
+                          <strong>{getKnownDisplayName(userId)}</strong>
+                          <small>Pending request</small>
+                        </div>
+                        <em>Pending</em>
+                        <button
+                          type="button"
+                          className="kodiak-friend-center-row__danger"
+                          disabled={friendActionUserId === userId || !onCancelFriendRequest}
+                          onClick={() => void handleCancelFriendRequestClick(userId)}
+                        >
+                          {friendActionUserId === userId ? 'Canceling...' : 'Cancel'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onCloseFriendCenter?.();
+                            setOpenProfileUserId(userId);
+                          }}
+                        >
+                          Profile
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="kodiak-friend-center-empty">No outgoing friend requests.</p>
+                )}
+              </section>
             </div>
           </div>
         </div>
@@ -2029,58 +2295,6 @@ export function MatrixChannelPanel({
                 />
                 <span>Notification sound</span>
               </label>
-            </div>
-
-            <div className="kodiak-friend-settings">
-              <strong>Friend Center</strong>
-
-              {incomingFriendUserIds.length ? (
-                <div className="kodiak-friend-settings__group">
-                  <span>Incoming</span>
-                  {incomingFriendUserIds.map((userId) => (
-                    <div key={userId} className="kodiak-friend-request-row">
-                      {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
-                      <strong>{getKnownDisplayName(userId)}</strong>
-                      <button type="button" disabled={friendActionUserId === userId} onClick={() => void handleAcceptFriendRequestClick(userId)}>
-                        Accept
-                      </button>
-                      <button type="button" disabled={friendActionUserId === userId} onClick={() => void handleDeclineFriendRequestClick(userId)}>
-                        Decline
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {outgoingFriendUserIds.length ? (
-                <div className="kodiak-friend-settings__group">
-                  <span>Outgoing</span>
-                  {outgoingFriendUserIds.map((userId) => (
-                    <div key={userId} className="kodiak-friend-request-row kodiak-friend-request-row--passive">
-                      {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
-                      <strong>{getKnownDisplayName(userId)}</strong>
-                      <em>Pending</em>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {friendUserIds.length ? (
-                <div className="kodiak-friend-settings__group">
-                  <span>Friends</span>
-                  {friendUserIds.map((userId) => (
-                    <div key={userId} className="kodiak-friend-request-row kodiak-friend-request-row--passive">
-                      {renderUserAvatar(userId, 'matrix-avatar--suggestion')}
-                      <strong>{getKnownDisplayName(userId)}</strong>
-                      <em>Friend</em>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {!incomingFriendUserIds.length && !outgoingFriendUserIds.length && !friendUserIds.length ? (
-                <p>No friend requests yet.</p>
-              ) : null}
             </div>
 
             {settingsErrorText ? <p className="kodiak-settings-error">{settingsErrorText}</p> : null}

@@ -1668,3 +1668,318 @@
     max-height: calc(100dvh - 1rem) !important;
   }
 }
+
+
+.kodiak-friend-center-modal {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  border: 1px solid rgba(251, 146, 60, 0.22);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 16% 8%, rgba(251, 146, 60, 0.12), transparent 34%),
+    rgba(15, 23, 42, 0.98);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+  padding: 1.25rem;
+}
+
+.kodiak-friend-center-modal__close {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid rgba(251, 146, 60, 0.24);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.9);
+  color: #fed7aa;
+  cursor: pointer;
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+.kodiak-friend-center-modal__close:hover,
+.kodiak-friend-center-modal__close:focus-visible {
+  border-color: rgba(251, 146, 60, 0.68);
+  background: rgba(251, 146, 60, 0.12);
+}
+
+.kodiak-friend-center-modal__header {
+  padding-right: 2.4rem;
+}
+
+.kodiak-friend-center-modal__header h2 {
+  margin: 0.25rem 0 0.3rem;
+  color: #fff7ed;
+  font-size: 1.7rem;
+}
+
+.kodiak-friend-center-modal__header p:last-child {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.kodiak-friend-center-modal__body {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.kodiak-friend-center-section {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 20px;
+  background: rgba(2, 6, 23, 0.34);
+  padding: 0.85rem;
+}
+
+.kodiak-friend-center-section__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.kodiak-friend-center-section__heading span {
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.kodiak-friend-center-section__heading strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  border: 1px solid rgba(251, 146, 60, 0.22);
+  border-radius: 999px;
+  background: rgba(67, 20, 7, 0.34);
+  color: #fed7aa;
+  font-size: 0.75rem;
+}
+
+.kodiak-friend-center-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.kodiak-friend-center-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) repeat(3, auto);
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.46);
+  padding: 0.55rem;
+}
+
+.kodiak-friend-center-row div {
+  display: grid;
+  min-width: 0;
+}
+
+.kodiak-friend-center-row strong {
+  overflow: hidden;
+  color: #fff7ed;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodiak-friend-center-row small {
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodiak-friend-center-row button {
+  border: 1px solid rgba(251, 146, 60, 0.22);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.58);
+  color: #fed7aa;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 900;
+  padding: 0.46rem 0.65rem;
+}
+
+.kodiak-friend-center-row button:hover:not(:disabled),
+.kodiak-friend-center-row button:focus-visible:not(:disabled) {
+  border-color: rgba(251, 146, 60, 0.62);
+  background: rgba(251, 146, 60, 0.12);
+}
+
+.kodiak-friend-center-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.kodiak-friend-center-row em {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.kodiak-friend-center-empty {
+  margin: 0;
+  border: 1px dashed rgba(148, 163, 184, 0.14);
+  border-radius: 16px;
+  color: #94a3b8;
+  font-size: 0.86rem;
+  padding: 0.85rem;
+}
+
+@media (max-width: 720px) {
+  .kodiak-friend-center-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .kodiak-friend-center-row button,
+  .kodiak-friend-center-row em {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+
+.kodiak-friend-center-row__danger {
+  border-color: rgba(248, 113, 113, 0.28) !important;
+  color: #fecaca !important;
+}
+
+.kodiak-friend-center-row__danger:hover:not(:disabled),
+.kodiak-friend-center-row__danger:focus-visible:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.68) !important;
+  background: rgba(127, 29, 29, 0.24) !important;
+}
+
+
+.kodiak-modal-backdrop--stacked {
+  z-index: 80;
+  background: rgba(2, 6, 23, 0.68);
+  backdrop-filter: blur(12px);
+}
+
+.kodiak-unfriend-modal {
+  width: min(30rem, calc(100vw - 2rem));
+  border: 1px solid rgba(248, 113, 113, 0.26);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(248, 113, 113, 0.13), transparent 34%),
+    rgba(15, 23, 42, 0.98);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+  padding: 1.25rem;
+}
+
+.kodiak-unfriend-modal__header {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.kodiak-unfriend-modal__header h2 {
+  margin: 0;
+  color: #fff7ed;
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+.kodiak-unfriend-modal__header p:last-child {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.kodiak-unfriend-modal__user {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.42);
+  padding: 0.75rem;
+}
+
+.kodiak-unfriend-modal__user div {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.kodiak-unfriend-modal__user strong {
+  overflow: hidden;
+  color: #fff7ed;
+  font-size: 0.98rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodiak-unfriend-modal__user span {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.kodiak-unfriend-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.kodiak-unfriend-modal__actions button {
+  border: 1px solid rgba(251, 146, 60, 0.24);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.58);
+  color: #fed7aa;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0.72rem 1rem;
+}
+
+.kodiak-unfriend-modal__actions button:hover:not(:disabled),
+.kodiak-unfriend-modal__actions button:focus-visible:not(:disabled) {
+  border-color: rgba(251, 146, 60, 0.68);
+  background: rgba(251, 146, 60, 0.12);
+}
+
+.kodiak-unfriend-modal__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.kodiak-unfriend-modal__danger {
+  border-color: rgba(248, 113, 113, 0.38) !important;
+  background: rgba(127, 29, 29, 0.28) !important;
+  color: #fecaca !important;
+}
+
+.kodiak-unfriend-modal__danger:hover:not(:disabled),
+.kodiak-unfriend-modal__danger:focus-visible:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.78) !important;
+  background: rgba(127, 29, 29, 0.42) !important;
+}
+
+
+.matrix-presence-dot--idle,
+.matrix-presence-text-dot--idle {
+  background: #f59e0b;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.32);
+}
