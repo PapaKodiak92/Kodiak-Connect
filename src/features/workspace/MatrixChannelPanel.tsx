@@ -280,6 +280,8 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   const [isSending, setIsSending] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const messageElementRefs = useRef<Record<string, HTMLElement | null>>({});
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
   const pollingTimer = useRef<number | null>(null);
 
   const displayName = getDisplayName(identity.userId);
@@ -295,6 +297,10 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
     },
     [identity],
   );
+
+  useEffect(() => {
+    shouldStickToBottomRef.current = true;
+  }, [activeChannel.id]);
 
   useEffect(() => {
     let isActive = true;
@@ -360,6 +366,27 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
       }
     };
   }, [refreshMessages, roomId]);
+
+  useEffect(() => {
+    const messageList = messageListRef.current;
+
+    if (!messageList || !shouldStickToBottomRef.current) {
+      return;
+    }
+
+    messageList.scrollTop = messageList.scrollHeight;
+  }, [messages, activeChannel.id]);
+
+  function handleMessageListScroll() {
+    const messageList = messageListRef.current;
+
+    if (!messageList) {
+      return;
+    }
+
+    const distanceFromBottom = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 160;
+  }
 
   function handleJumpToMessage(eventId?: string) {
     if (!eventId) {
@@ -444,7 +471,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
         {isLoading ? (
           <div className="matrix-empty-state">Loading #{activeChannel.name}...</div>
         ) : messages.length ? (
-          <div className="matrix-message-list" aria-label="Message history">
+          <div ref={messageListRef} className="matrix-message-list" aria-label="Message history" onScroll={handleMessageListScroll}>
             {messages.map((message) => {
               const parsedMessage = parseMessageBody(message.body);
               const isOwnMessage = message.sender === identity.userId;
