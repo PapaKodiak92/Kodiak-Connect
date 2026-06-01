@@ -48,7 +48,7 @@
 .matrix-message-group {
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.16rem;
   width: min(720px, 92%);
 }
 
@@ -104,22 +104,30 @@
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
-  max-width: min(620px, 96%);
-  gap: 0.38rem;
+  max-width: min(420px, 84%);
+  gap: 0.32rem;
   border: 0;
   background: transparent;
   color: #94a3b8;
-  font-size: 0.82rem;
-  padding: 0 0.2rem;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  margin-left: 0.78rem;
+  padding: 0;
   text-align: left;
 }
 
 .matrix-message-group--own .matrix-reply-thread-link {
   align-self: flex-end;
+  margin-right: 0.78rem;
 }
 
 .matrix-reply-thread-link:not(:disabled):hover {
   color: #fed7aa;
+}
+
+.matrix-reply-thread-link:focus-visible {
+  outline: 1px solid rgba(251, 146, 60, 0.5);
+  outline-offset: 3px;
 }
 
 .matrix-reply-thread-link:disabled {
@@ -127,11 +135,23 @@
   opacity: 0.72;
 }
 
+.matrix-reply-thread-link__arrow {
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
 .matrix-reply-thread-link strong {
+  flex: 0 0 auto;
   color: #fed7aa;
 }
 
-.matrix-reply-thread-link span:last-child {
+.matrix-reply-thread-link__separator {
+  flex: 0 0 auto;
+  color: #475569;
+}
+
+.matrix-reply-thread-link__preview {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
