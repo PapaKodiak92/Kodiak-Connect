@@ -1,0 +1,32 @@
+.workspace-app-shell {
+  --workspace-header-height: 118px;
+}
+
+.channel-sidebar__header,
+.chat-placeholder__header {
+  min-height: var(--workspace-header-height);
+}
+
+.channel-sidebar__header {
+  display: flex;
+  align-items: center;
+}
+
+.chat-placeholder__header {
+  align-items: center;
+}
+
+.channel-sidebar__sections {
+  border-top: 0;
+}
+
+@media (max-width: 720px) {
+  .workspace-app-shell {
+    --workspace-header-height: auto;
+  }
+
+  .channel-sidebar__header,
+  .chat-placeholder__header {
+    min-height: 0;
+  }
+}
