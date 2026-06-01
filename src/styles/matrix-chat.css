@@ -630,3 +630,12 @@
 .kodiak-global-message-action-menu {
   z-index: 90 !important;
 }
+
+
+.kodiak-global-message-action-menu {
+  width: 230px !important;
+}
+
+.kodiak-global-message-action-menu button {
+  white-space: nowrap;
+}

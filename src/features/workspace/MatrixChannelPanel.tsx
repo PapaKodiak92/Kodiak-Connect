@@ -23,6 +23,7 @@ interface MatrixChannelPanelProps {
   activeChannel: WorkspaceChannel;
   activeSpace: WorkspaceSpace;
   identity: MatrixLoginIdentity;
+  onOpenDirectMessage?: (userId: string, displayName: string) => void;
 }
 
 interface MentionSearch {
@@ -338,7 +339,7 @@ function renderMessageTextWithMentions(body: string, currentUserLocalpart: strin
   return renderedParts;
 }
 
-export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: MatrixChannelPanelProps) {
+export function MatrixChannelPanel({ activeChannel, activeSpace, identity, onOpenDirectMessage }: MatrixChannelPanelProps) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MatrixTextMessage[]>([]);
   const [draftMessage, setDraftMessage] = useState('');
@@ -644,7 +645,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   }
 
   function getSafeMenuPosition(clientX: number, clientY: number) {
-    const menuWidth = 170;
+    const menuWidth = 230;
     const menuHeight = 210;
     const padding = 14;
 
@@ -659,7 +660,7 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
   }
 
   function openMessageActionMenu(message: MatrixTextMessage, clientX: number, clientY: number) {
-    if (!canPost) {
+    if (!canPost && !onOpenDirectMessage) {
       return;
     }
 
@@ -950,27 +951,45 @@ export function MatrixChannelPanel({ activeChannel, activeSpace, identity }: Mat
             event.stopPropagation();
           }}
         >
-          <button
-            type="button"
-            onClick={() => {
-              setReactionPickerMessageId((currentMessageId) =>
-                currentMessageId === openActionMenuMessage.eventId ? null : openActionMenuMessage.eventId,
-              );
-              setOpenActionMenu(null);
-            }}
-          >
-            React
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setReplyTarget({ ...openActionMenuMessage, body: openActionMenuParsedMessage.body });
-              setEditingMessage(null);
-              setOpenActionMenu(null);
-            }}
-          >
-            Reply
-          </button>
+          {openActionMenuMessage.sender !== identity.userId && onOpenDirectMessage ? (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenDirectMessage(openActionMenuMessage.sender, getDisplayName(openActionMenuMessage.sender));
+                setOpenActionMenu(null);
+                setReactionPickerMessageId(null);
+                setReplyTarget(null);
+                setEditingMessage(null);
+              }}
+            >
+              Message @{getDisplayName(openActionMenuMessage.sender)}
+            </button>
+          ) : null}
+          {canPost ? (
+            <button
+              type="button"
+              onClick={() => {
+                setReactionPickerMessageId((currentMessageId) =>
+                  currentMessageId === openActionMenuMessage.eventId ? null : openActionMenuMessage.eventId,
+                );
+                setOpenActionMenu(null);
+              }}
+            >
+              React
+            </button>
+          ) : null}
+          {canPost ? (
+            <button
+              type="button"
+              onClick={() => {
+                setReplyTarget({ ...openActionMenuMessage, body: openActionMenuParsedMessage.body });
+                setEditingMessage(null);
+                setOpenActionMenu(null);
+              }}
+            >
+              Reply
+            </button>
+          ) : null}
           {openActionMenuMessage.sender === identity.userId ? (
             <button type="button" onClick={() => startEditingMessage({ ...openActionMenuMessage, body: openActionMenuParsedMessage.body })}>
               Edit

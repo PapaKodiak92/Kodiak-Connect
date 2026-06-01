@@ -56,6 +56,87 @@ function getUserLocalpart(userId: string) {
   return withoutPrefix.split(':')[0]?.toLowerCase() ?? userId.toLowerCase();
 }
 
+function getDisplayNameFromUserId(userId: string) {
+  const withoutPrefix = userId.startsWith('@') ? userId.slice(1) : userId;
+  return withoutPrefix.split(':')[0] || userId;
+}
+
+function getStoredDirectMessagesKey(userId: string) {
+  return `KC_DYNAMIC_DMS:${userId}`;
+}
+
+function getDirectMessageChannelId(userId: string) {
+  return `dm-${getUserLocalpart(userId)}`;
+}
+
+function createDirectMessageChannel(userId: string, displayName = getDisplayNameFromUserId(userId)): WorkspaceChannel {
+  return {
+    id: getDirectMessageChannelId(userId),
+    name: displayName,
+    kind: 'dm',
+    description: `Private direct message with ${displayName}.`,
+    matrixDmUserId: userId,
+    dmDisplayName: displayName,
+  };
+}
+
+function readStoredDirectMessageChannels(userId: string) {
+  try {
+    const storedValue = window.localStorage.getItem(getStoredDirectMessagesKey(userId));
+
+    if (!storedValue) {
+      return [];
+    }
+
+    return JSON.parse(storedValue) as WorkspaceChannel[];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredDirectMessageChannels(userId: string, channels: WorkspaceChannel[]) {
+  window.localStorage.setItem(getStoredDirectMessagesKey(userId), JSON.stringify(channels));
+}
+
+function mergeDirectMessagesIntoSpace(space: WorkspaceSpace, directMessageChannels: WorkspaceChannel[]): WorkspaceSpace {
+  const existingDmChannels = space.sections.find((section) => section.id === 'direct-messages')?.channels ?? [];
+  const channelsById = new Map<string, WorkspaceChannel>();
+
+  for (const channel of [...existingDmChannels, ...directMessageChannels]) {
+    channelsById.set(channel.id, channel);
+  }
+
+  const mergedDmChannels = [...channelsById.values()];
+
+  if (!mergedDmChannels.length) {
+    return space;
+  }
+
+  const hasDirectMessageSection = space.sections.some((section) => section.id === 'direct-messages');
+
+  return {
+    ...space,
+    sections: hasDirectMessageSection
+      ? space.sections.map((section) =>
+          section.id === 'direct-messages'
+            ? {
+                ...section,
+                channels: mergedDmChannels,
+              }
+            : section,
+        )
+      : [
+          ...space.sections.slice(0, 1),
+          {
+            id: 'direct-messages',
+            title: 'Direct Messages',
+            channels: mergedDmChannels,
+          },
+          ...space.sections.slice(1),
+        ],
+  };
+}
+
 function getDmRoomCacheKey(currentUserId: string, targetUserId: string) {
   return `KC_DM_ROOM:${[currentUserId, targetUserId].sort().join('|')}`;
 }
@@ -79,13 +160,19 @@ function getDirectMessageTargetUserId(channel: WorkspaceChannel, currentUserId: 
 export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
   const [activeSpaceId, setActiveSpaceId] = useState(officialSpace.id);
   const [activeChannelId, setActiveChannelId] = useState('general');
+  const [directMessageChannels, setDirectMessageChannels] = useState<WorkspaceChannel[]>(() =>
+    readStoredDirectMessageChannels(identity.userId),
+  );
   const [channelActivity, setChannelActivity] = useState<ChannelActivityById>({});
   const [lastSeenByChannel, setLastSeenByChannel] = useState<Record<string, number>>(() => readLastSeenByChannel(identity.userId));
   const [hasAcknowledgedOfficialSpace, setHasAcknowledgedOfficialSpace] = useState(() =>
     hasCurrentOfficialSpaceAcknowledgement(identity.userId),
   );
 
-  const activeSpace = useMemo(() => spaces.find((space) => space.id === activeSpaceId) ?? officialSpace, [activeSpaceId]);
+  const activeSpace = useMemo(() => {
+    const selectedSpace = spaces.find((space) => space.id === activeSpaceId) ?? officialSpace;
+    return mergeDirectMessagesIntoSpace(selectedSpace, directMessageChannels);
+  }, [activeSpaceId, directMessageChannels]);
   const activeChannel = useMemo(() => {
     return activeSpace.sections.flatMap((section) => section.channels).find((channel) => channel.id === activeChannelId) ?? findInitialChannel(activeSpace);
   }, [activeChannelId, activeSpace]);
@@ -238,6 +325,21 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
     setActiveChannelId(channel.id);
   }
 
+  function handleOpenDirectMessage(userId: string, displayName = getDisplayNameFromUserId(userId)) {
+    const directMessageChannel = createDirectMessageChannel(userId, displayName);
+
+    setDirectMessageChannels((currentChannels) => {
+      const withoutDuplicate = currentChannels.filter((channel) => channel.id !== directMessageChannel.id);
+      const nextChannels = [directMessageChannel, ...withoutDuplicate];
+
+      writeStoredDirectMessageChannels(identity.userId, nextChannels);
+      return nextChannels;
+    });
+
+    setActiveSpaceId(officialSpace.id);
+    setActiveChannelId(directMessageChannel.id);
+  }
+
   function handleAcknowledgeOfficialSpace() {
     saveOfficialSpaceAcknowledgement(identity.userId);
     setHasAcknowledgedOfficialSpace(true);
@@ -258,7 +360,12 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
         onLogout={onLogout}
       />
       {activeChannel.matrixAlias || activeChannel.matrixDmUserId ? (
-        <MatrixChannelPanel activeSpace={activeSpace} activeChannel={activeChannel} identity={identity} />
+        <MatrixChannelPanel
+          activeSpace={activeSpace}
+          activeChannel={activeChannel}
+          identity={identity}
+          onOpenDirectMessage={handleOpenDirectMessage}
+        />
       ) : (
         <ChatPlaceholder activeSpace={activeSpace} activeChannel={activeChannel} identity={identity} />
       )}
