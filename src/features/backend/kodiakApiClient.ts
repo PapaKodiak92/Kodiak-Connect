@@ -184,3 +184,20 @@ export async function saveKodiakProfile(
   const data = await postKodiak<KodiakProfileResponse>(identity, '/api/profiles/me', profile);
   return data.profile ?? null;
 }
+
+
+export async function searchKodiakProfiles(identity: MatrixLoginIdentity, query: string, limit = 12) {
+  const response = await fetch(
+    `${KODIAK_API_BASE_URL}/api/profiles/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(String(limit))}`,
+    {
+      headers: getHeaders(identity),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error('Kodiak profile search failed.');
+  }
+
+  const data = (await response.json()) as KodiakProfilesResponse;
+  return Object.values(data.profiles ?? {});
+}

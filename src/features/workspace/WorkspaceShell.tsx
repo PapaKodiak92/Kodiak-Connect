@@ -6,6 +6,7 @@ import {
   declineKodiakFriendRequest,
   loadKodiakFriendState,
   removeKodiakFriend,
+  searchKodiakProfiles,
   sendKodiakFriendRequest,
 } from '../backend/kodiakApiClient';
 import {
@@ -41,6 +42,14 @@ const spaces: WorkspaceSpace[] = [officialSpace];
 
 type FriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
 type FriendStatusByUserId = Record<string, FriendStatus>;
+
+type DirectMessageSearchUser = {
+  avatarUrl?: string;
+  bio?: string;
+  displayName: string;
+  localpart: string;
+  userId: string;
+};
 
 function findInitialChannel(space: WorkspaceSpace) {
   return space.sections.flatMap((section) => section.channels).find((channel) => !channel.disabled) ?? space.sections[0]?.channels[0];
@@ -230,6 +239,7 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
   const [isStartDmOpen, setIsStartDmOpen] = useState(false);
   const [isFriendCenterOpen, setIsFriendCenterOpen] = useState(false);
   const [dmSearchQuery, setDmSearchQuery] = useState('');
+  const [backendUserSearchResults, setBackendUserSearchResults] = useState<DirectMessageSearchUser[]>([]);
   const [dmDisplayNamesByUserId, setDmDisplayNamesByUserId] = useState<Record<string, string>>({});
   const [friendStatusByUserId, setFriendStatusByUserId] = useState<FriendStatusByUserId>({});
   const friendStatusByUserIdRef = useRef<FriendStatusByUserId>({});
@@ -258,22 +268,16 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
   const activeChannelLatestTs = activeChannel ? channelActivity[activeChannel.id]?.latestTs ?? 0 : 0;
   const normalizedDmSearchQuery = normalizeDmSearchQuery(dmSearchQuery);
   const directMessageSearchResults = useMemo(() => {
-    const usersById = new Map<string, { displayName: string; localpart: string; userId: string }>();
+    const usersById = new Map<string, DirectMessageSearchUser>();
 
-    for (const localpart of STAGING_USER_LOCALPARTS) {
-      const userId = getMatrixUserIdFromLocalpart(localpart);
-
-      if (userId !== identity.userId) {
-        usersById.set(userId, {
-          displayName: dmDisplayNamesByUserId[userId] || getDisplayNameFromUserId(userId),
-          localpart,
-          userId,
-        });
+    for (const user of backendUserSearchResults) {
+      if (user.userId !== identity.userId) {
+        usersById.set(user.userId, user);
       }
     }
 
     for (const channel of directMessageChannels) {
-      if (!channel.matrixDmUserId || channel.matrixDmUserId === identity.userId) {
+      if (!channel.matrixDmUserId || channel.matrixDmUserId === identity.userId || usersById.has(channel.matrixDmUserId)) {
         continue;
       }
 
@@ -284,22 +288,55 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
       });
     }
 
-    const users = [...usersById.values()];
+    return [...usersById.values()].slice(0, 8);
+  }, [backendUserSearchResults, directMessageChannels, dmDisplayNamesByUserId, identity.userId]);
 
-    if (!normalizedDmSearchQuery) {
-      return users.slice(0, 8);
-    }
+  useEffect(() => {
+    let isActive = true;
 
-    return users
-      .filter((user) => {
-        return user.localpart.includes(normalizedDmSearchQuery) || user.displayName.toLowerCase().includes(normalizedDmSearchQuery);
-      })
-      .slice(0, 8);
-  }, [directMessageChannels, dmDisplayNamesByUserId, identity.userId, normalizedDmSearchQuery]);
+    const searchTimerId = window.setTimeout(() => {
+      void searchKodiakProfiles(identity, dmSearchQuery, 12)
+        .then((profiles) => {
+          if (!isActive) {
+            return;
+          }
 
+          const users = profiles
+            .filter((profile) => profile.userId !== identity.userId)
+            .map((profile) => ({
+              avatarUrl: profile.avatarUrl,
+              bio: profile.bio,
+              displayName: profile.displayName || getDisplayNameFromUserId(profile.userId),
+              localpart: getUserLocalpart(profile.userId),
+              userId: profile.userId,
+            }));
+
+          setBackendUserSearchResults(users);
+
+          setDmDisplayNamesByUserId((currentNames) => ({
+            ...currentNames,
+            ...Object.fromEntries(users.map((user) => [user.userId, user.displayName])),
+          }));
+        })
+        .catch((error) => {
+          console.warn('[Kodiak Connect] Backend profile search failed', error);
+
+          if (isActive) {
+            setBackendUserSearchResults([]);
+          }
+        });
+    }, 220);
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(searchTimerId);
+    };
+  }, [dmSearchQuery, identity]);
+
+  // Backend profile search powers Start DM. Manual raw Matrix IDs are intentionally not shown in normal search.
   const manualDirectMessageUserId =
-    normalizedDmSearchQuery && !directMessageSearchResults.some((user) => user.localpart === normalizedDmSearchQuery)
-      ? getMatrixUserIdFromLocalpart(normalizedDmSearchQuery)
+    normalizedDmSearchQuery.startsWith('@') && !directMessageSearchResults.some((user) => user.userId.toLowerCase() === normalizedDmSearchQuery)
+      ? normalizedDmSearchQuery
       : null;
 
   const totalUnreadCount = Object.values(channelActivity).reduce((count, activity) => count + (activity.unreadCount ?? 0), 0);

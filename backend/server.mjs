@@ -164,6 +164,62 @@ function getFriendStatuses(friendStore, userId) {
   return statuses;
 }
 
+
+async function handleProfileSearch(response, corsHeaders, url) {
+  const query = String(url.searchParams.get("q") ?? "").trim().toLowerCase();
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 12), 1), 25);
+
+  const profileStore = await readJsonFile(PROFILES_FILE, {});
+  const presenceStore = await readJsonFile(PRESENCE_FILE, {});
+  const friendStore = await readJsonFile(FRIENDS_FILE, {});
+
+  const candidateUserIds = new Set([
+    ...Object.keys(profileStore),
+    ...Object.keys(presenceStore),
+  ]);
+
+  for (const edge of Object.values(friendStore)) {
+    if (edge?.requesterUserId) candidateUserIds.add(edge.requesterUserId);
+    if (edge?.targetUserId) candidateUserIds.add(edge.targetUserId);
+  }
+
+  const profiles = {};
+
+  for (const userId of candidateUserIds) {
+    if (!isValidMatrixUserId(userId)) {
+      continue;
+    }
+
+    const storedProfile = profileStore[userId];
+    const storedPresence = presenceStore[userId];
+    const profile = sanitizeProfile(storedProfile, userId);
+
+    if (!storedProfile && storedPresence?.displayName) {
+      profile.displayName = storedPresence.displayName;
+      profile.normalizedDisplayName = normalizeDisplayName(storedPresence.displayName);
+    }
+
+    const searchableText = [
+      profile.displayName,
+      profile.bio,
+      userId,
+      getDefaultDisplayName(userId),
+    ].join(" ").toLowerCase();
+
+    if (query && !searchableText.includes(query)) {
+      continue;
+    }
+
+    profiles[userId] = profile;
+
+    if (Object.keys(profiles).length >= limit) {
+      break;
+    }
+  }
+
+  sendJson(response, 200, { profiles }, corsHeaders);
+}
+
 async function handleProfileUsers(response, corsHeaders, url) {
   const ids = (url.searchParams.get("ids") ?? "")
     .split(",")
@@ -431,6 +487,11 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, { ok: true, service: "kodiak-connect-backend", time: new Date().toISOString() }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/profiles/search") {
+      await handleProfileSearch(response, corsHeaders, url);
       return;
     }
 
