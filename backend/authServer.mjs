@@ -220,25 +220,67 @@ async function verifyTurnstile(token, remoteIp) {
 }
 
 async function sendVerificationEmail(email, username, code) {
-  const subject = 'Verify your Kodiak Connect account';
+  const subject = 'Your Kodiak Connect verification code';
+  const logoUrl = 'https://kodiak-connect.com/assets/kodiak-connect-icon.png';
+
+  const escapeHtml = (value) =>
+    String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+
+  const safeUsername = escapeHtml(username);
+  const safeCode = escapeHtml(code);
+
   const text = [
-    `Your Kodiak Connect verification code is ${code}.`,
+    `Hello ${username},`,
     '',
-    `Username: ${username}`,
+    'Your Kodiak Connect verification code is:',
+    '',
+    code,
+    '',
     'This code expires in 15 minutes.',
     '',
     'If you did not request this, you can ignore this email.',
   ].join('\n');
-  const html = `
-    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
-      <h2>Kodiak Connect verification</h2>
-      <p>Your verification code is:</p>
-      <p style="font-size:28px;font-weight:800;letter-spacing:6px">${code}</p>
-      <p>Username: <strong>${username}</strong></p>
-      <p>This code expires in 15 minutes.</p>
-      <p>If you did not request this, you can ignore this email.</p>
-    </div>
-  `;
+
+  const html = [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<body style="margin:0;padding:0;background:#070b16;font-family:Arial,Helvetica,sans-serif;color:#f8fafc;">',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#070b16;padding:32px 16px;">',
+    '<tr><td align="center">',
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#0f172a;border:1px solid rgba(249,115,22,0.32);border-radius:24px;overflow:hidden;">',
+
+    '<tr><td style="padding:32px 28px 22px;text-align:center;background:#111827;">',
+    '<img src="' + logoUrl + '" alt="Kodiak Connect" width="84" height="84" style="display:block;margin:0 auto 18px;border-radius:22px;">',
+    '<div style="font-size:12px;font-weight:800;letter-spacing:0.22em;text-transform:uppercase;color:#f59e0b;">Kodiak Connect</div>',
+    '<h1 style="margin:12px 0 0;font-size:28px;line-height:1.15;color:#fff7ed;">Verify your account</h1>',
+    '</td></tr>',
+
+    '<tr><td style="padding:30px 28px 10px;">',
+    '<p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:#e2e8f0;">Hello <strong style="color:#fed7aa;">' + safeUsername + '</strong>,</p>',
+    '<p style="margin:0 0 20px;font-size:16px;line-height:1.6;color:#cbd5e1;">Your verification code is:</p>',
+    '<div style="margin:0 auto 24px;padding:20px;border-radius:18px;background:#020617;border:1px solid rgba(249,115,22,0.38);text-align:center;">',
+    '<div style="font-size:36px;line-height:1;font-weight:900;letter-spacing:0.22em;color:#fb923c;">' + safeCode + '</div>',
+    '</div>',
+    '<p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#94a3b8;">This code expires in 15 minutes.</p>',
+    '<p style="margin:0;font-size:14px;line-height:1.6;color:#94a3b8;">If you did not request this, you can ignore this email.</p>',
+    '</td></tr>',
+
+    '<tr><td style="padding:24px 28px 30px;">',
+    '<div style="height:1px;background:rgba(148,163,184,0.16);margin-bottom:18px;"></div>',
+    '<p style="margin:0;text-align:center;font-size:12px;line-height:1.5;color:#64748b;">Kodiak Connect authentication notice</p>',
+    '</td></tr>',
+
+    '</table>',
+    '</td></tr>',
+    '</table>',
+    '</body>',
+    '</html>',
+  ].join('');
 
   if (!RESEND_API_KEY || !AUTH_EMAIL_FROM) {
     console.warn(`[Kodiak Auth] Email is not configured. Verification code for ${email}: ${code}`);

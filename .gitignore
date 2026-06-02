@@ -56,3 +56,9 @@ artifacts/
 *.AppImage
 *.apk
 *.aab
+
+# Kodiak Connect production auth runtime data
+/backend/data/auth-accounts.json
+/backend/data/auth-pending.json
+/backend/data/auth-rate-limits.json
+/backend/data/*.backup.*
