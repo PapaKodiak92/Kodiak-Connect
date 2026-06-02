@@ -1,89 +1,44 @@
-# Kodiak Connect v2
+# Kodiak Connect
 
-Kodiak Connect v2 is a clean rebuild of the secure Matrix chat client foundation.
+Kodiak Connect is a secure communication platform focused on reliable messaging, clean user experience, and long-term cross-platform support.
 
-## v2 rules
+## Overview
 
-- Updaters/installers come before chat features.
-- `src/app/App.tsx` stays composition-only.
-- Feature logic lives under `src/features/*`.
-- Platform-specific code lives under `src/platform/android`, `src/platform/desktop`, or `src/platform/web`.
-- Mobile upload must stay isolated under `src/features/uploads`.
-- Do not mix UI fixes, native plugins, and Matrix logic in the same patch.
-- Build and test after every small change.
+Kodiak Connect is being developed as a modern chat application for desktop, mobile, and web users. The project focuses on building a dependable messaging experience with strong attention to privacy, usability, app stability, and consistent updates.
 
-## Hosting direction
+The current beta phase is centered on strengthening the core app experience before expanding into larger feature sets.
 
-Kodiak Connect v2 is VPS/domain-first, not Vercel-first.
+## Core Focus
 
-Primary production routing plan:
+Kodiak Connect is currently focused on:
 
-```text
-kodiak-connect.com          - Web app
-www.kodiak-connect.com      - Redirect to kodiak-connect.com
-updates.kodiak-connect.com  - Tauri updater manifests and installer files
-matrix.kodiak-connect.com   - Synapse homeserver later
-api.kodiak-connect.com      - Optional backend services later
-```
+* Secure account access and communication.
+* Reliable text messaging and workspace navigation.
+* Profile and account management.
+* Media sharing for images, GIFs, screenshots, audio, video, and files.
+* Desktop and mobile interface improvements.
+* Stable app update delivery across supported platforms.
+* A clean foundation for future features and long-term maintenance.
 
-Vercel may still be used later for temporary previews or backup web deploys, but the core production path is the VPS plus the Kodiak Connect domain.
+## Supported Platform Goals
 
-## Current foundation
+Kodiak Connect is being developed with support for:
 
-- Vite + React + TypeScript web app scaffold
-- Capacitor config for Android
-- Tauri v2 desktop scaffold for Windows and Linux Mint `.deb`
-- Updater manifest placeholders
-- Clean feature/platform/component boundaries
+* Windows desktop.
+* Linux desktop.
+* Android.
+* Web browser access.
 
-## First local setup
+Platform support and polish will continue to improve throughout beta testing.
 
-```bash
-npm install
-npm run build
-```
+## Current Development Status
 
-## Android setup
+Kodiak Connect is in active beta development. Recent work has focused on improving app stability, message controls, profile behavior, media handling, mobile usability, and desktop presentation.
 
-Generate the native Android project locally after dependencies are installed:
+Each release is intended to improve reliability while keeping the app easier to test, update, and expand.
 
-```bash
-npm run cap:add:android
-npm run cap:sync
-npm run cap:open:android
-```
+## Development Direction
 
-Commit the generated `android/` project after confirming it builds in Android Studio.
+The goal for Kodiak Connect is to deliver a secure, practical, and user-friendly communication app that can grow over time without sacrificing stability.
 
-## Desktop setup
-
-Install the Rust/Tauri prerequisites for your OS, then run:
-
-```bash
-npm run tauri:dev
-npm run tauri:build
-```
-
-The Tauri config currently targets:
-
-- Windows `.msi`
-- Linux `.deb`
-
-AppImage can be added later once MSI/DEB are stable.
-
-## Updater signing
-
-Generate a Tauri updater key locally and keep the private key out of git:
-
-```bash
-npm run tauri:signer:generate
-```
-
-Then replace `REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY` in `src-tauri/tauri.conf.json` with the generated public key.
-
-## Release manifest placeholders
-
-- `public/releases/dev.json` is the dev release manifest placeholder.
-- `src/features/updater/updateManifest.ts` is the app-side typed manifest model.
-
-Do not publish real updater URLs or signatures until release artifacts are signed.
+Upcoming work will continue to focus on testing, user experience improvements, media reliability, mobile polish, and preparing the app for broader use.
