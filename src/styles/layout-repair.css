@@ -242,3 +242,55 @@
 .matrix-member-panel .matrix-presence-text-dot {
   display: none !important;
 }
+
+/* Kodiak 1.1.2: message action and header pill repair */
+.chat-placeholder__header .chat-placeholder__user--button {
+  align-self: center !important;
+  margin-top: 0.85rem !important;
+  transform: translateY(0.35rem) !important;
+}
+
+.matrix-message .matrix-message-actions {
+  position: absolute !important;
+  top: 0.72rem !important;
+  right: 0.75rem !important;
+  bottom: auto !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 160ms ease, transform 160ms ease !important;
+  transform: translateY(-2px) !important;
+}
+
+.matrix-message:hover .matrix-message-actions,
+.matrix-message:focus-within .matrix-message-actions {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: translateY(0) !important;
+}
+
+.matrix-message .matrix-message-action-trigger {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 2.05rem !important;
+  height: 1.55rem !important;
+  border: 1px solid rgba(251, 146, 60, 0.24) !important;
+  border-radius: 999px !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  color: #fed7aa !important;
+  font-size: 1.05rem !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  padding: 0 0 0.12rem !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+}
+
+.matrix-message .matrix-message-action-trigger:hover,
+.matrix-message .matrix-message-action-trigger:focus-visible,
+.matrix-message .matrix-message-action-trigger[aria-expanded='true'] {
+  border-color: rgba(251, 146, 60, 0.72) !important;
+  background: rgba(67, 20, 7, 0.7) !important;
+}

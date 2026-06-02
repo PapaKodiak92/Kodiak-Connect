@@ -1892,7 +1892,7 @@ export function MatrixChannelPanel({
             ref={messageListRef}
             className="matrix-message-list"
             aria-label="Message history"
-            onContextMenuCapture={handleMessageListContextMenu}
+            onContextMenu={handleMessageListContextMenu}
             onScroll={handleMessageListScroll}
           >
             {visibleMessages.map((message: MatrixTextMessage) => {
@@ -1909,9 +1909,9 @@ export function MatrixChannelPanel({
                       disabled={!parsedMessage.reply.eventId}
                       title={`Replying to ${parsedMessage.reply.sender}: ${parsedMessage.reply.preview}`}
                     >
-                      <span className="matrix-reply-thread-link__arrow" aria-hidden="true">↪</span>
+                      <span className="matrix-reply-thread-link__arrow" aria-hidden="true">â†ª</span>
                       <strong>{parsedMessage.reply.sender}</strong>
-                      <span className="matrix-reply-thread-link__separator" aria-hidden="true">·</span>
+                      <span className="matrix-reply-thread-link__separator" aria-hidden="true">Â·</span>
                       <span className="matrix-reply-thread-link__preview">{parsedMessage.reply.preview}</span>
                     </button>
                   ) : null}
@@ -1922,6 +1922,11 @@ export function MatrixChannelPanel({
                     }}
                     className={`matrix-message ${isOwnMessage ? 'matrix-message--own' : ''}`}
                     data-message-event-id={message.eventId}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openMessageActionMenu(message, event.clientX, event.clientY);
+                    }}
                   >
                     <button
                       type="button"
@@ -1971,6 +1976,23 @@ export function MatrixChannelPanel({
                         ))}
                       </div>
                     ) : null}
+
+                      <div className="matrix-message-actions">
+                        <button
+                          type="button"
+                          className="matrix-message-action-trigger"
+                          aria-label="Open message actions"
+                          aria-expanded={openActionMenu?.messageId === message.eventId}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const buttonRect = event.currentTarget.getBoundingClientRect();
+                            openMessageActionMenu(message, buttonRect.right, buttonRect.top);
+                          }}
+                        >
+                          ⋯
+                        </button>
+                      </div>
                     </div>
                   </article>
                 </div>
@@ -1990,7 +2012,7 @@ export function MatrixChannelPanel({
           title={isMemberPanelOpen ? 'Hide members' : 'Show members'}
           onClick={() => setIsMemberPanelOpen((isOpen) => !isOpen)}
         >
-          {isMemberPanelOpen ? '›' : '‹'}
+          {isMemberPanelOpen ? 'â€º' : 'â€¹'}
         </button>
 
         <div className="matrix-member-panel__inner">
@@ -2010,7 +2032,7 @@ export function MatrixChannelPanel({
                 <strong>{getKnownDisplayName(userId)}</strong>
                 <small>
                   <i className={`matrix-presence-text-dot matrix-presence-text-dot--${getKnownPresence(userId)}`} aria-hidden="true" />
-                  {getPresenceLabel(userId)} · {getMemberRoleLabel(userId)}
+                  {getPresenceLabel(userId)} Â· {getMemberRoleLabel(userId)}
                 </small>
               </span>
             </button>
@@ -2494,7 +2516,7 @@ export function MatrixChannelPanel({
               aria-label="Close Safety Center"
               onClick={() => setIsSafetyCenterOpen(false)}
             >
-              ×
+              Ã—
             </button>
 
             <div className="kodiak-safety-center-modal__header">
@@ -2541,7 +2563,7 @@ export function MatrixChannelPanel({
                       {report.context || report.roomId ? (
                         <small>
                           {report.context ? `Context: ${report.context}` : ''}
-                          {report.context && report.roomId ? ' · ' : ''}
+                          {report.context && report.roomId ? ' Â· ' : ''}
                           {report.roomId ? `Room: ${report.roomId}` : ''}
                         </small>
                       ) : null}
@@ -2566,7 +2588,7 @@ export function MatrixChannelPanel({
             onClick={(event) => event.stopPropagation()}
           >
             <button type="button" className="kodiak-friend-center-modal__close" aria-label="Close Friend Center" onClick={onCloseFriendCenter}>
-              ×
+              Ã—
             </button>
 
             <div className="kodiak-friend-center-modal__header">
@@ -2758,7 +2780,7 @@ export function MatrixChannelPanel({
               aria-label="Close profile settings"
               onClick={() => setIsSettingsOpen(false)}
             >
-              ×
+              Ã—
             </button>
             <div className="kodiak-confirm-modal__header">
               <p className="eyebrow eyebrow--ember">Account settings</p>
