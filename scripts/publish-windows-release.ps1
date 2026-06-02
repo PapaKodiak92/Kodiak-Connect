@@ -3,7 +3,7 @@ param(
   [ValidatePattern('^\d+\.\d+\.\d+$')]
   [string]$Version,
 
-  [string]$VpsHost = 'root@51.81.81.159',
+  [string]$VpsHost = 'kodiak@51.81.81.159',
   [string]$RemoteRoot = '/var/www/kodiak-connect-updates',
   [string]$BaseUrl = 'https://updates.kodiak-connect.com',
   [string]$Notes = 'Kodiak Connect desktop release.',
