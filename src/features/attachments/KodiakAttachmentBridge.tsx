@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import { kodiakEnv } from '../../config/env';
 import { officialSpace } from '../workspace/workspaceData';
@@ -372,6 +372,27 @@ async function sendTextNotice(identity: MatrixLoginIdentity, roomId: string, bod
   );
 }
 
+async function sendExternalGifEvent(identity: MatrixLoginIdentity, roomId: string, title: string, gifUrl: string) {
+  const txnId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  await matrixJsonRequest<{ event_id: string }>(
+    identity,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${encodeURIComponent(txnId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        body: title || 'Giphy GIF',
+        info: {
+          mimetype: 'image/gif',
+          size: 0,
+        },
+        msgtype: 'm.image',
+        url: gifUrl,
+      }),
+    },
+  );
+}
+
 async function loadRecentAttachments(identity: MatrixLoginIdentity, roomId: string) {
   const response = await matrixJsonRequest<MatrixMessagesResponse>(
     identity,
@@ -446,6 +467,10 @@ export function KodiakAttachmentBridge({ identity }: KodiakAttachmentBridgeProps
           }
 
           try {
+            if (!attachment.url.startsWith('mxc://')) {
+              return { ...attachment, objectUrl: attachment.url };
+            }
+
             const response = await fetch(getMatrixDownloadUrl(identity, attachment.url), {
               headers: {
                 Authorization: `Bearer ${identity.accessToken}`,
@@ -602,7 +627,8 @@ export function KodiakAttachmentBridge({ identity }: KodiakAttachmentBridgeProps
         await sendAttachmentEvent(identity, roomId, file, contentUri);
         await sendTextNotice(identity, roomId, `[GIF] Shared GIF: ${title}. Open Transfers to preview/download.`);
       } catch {
-        await sendTextNotice(identity, roomId, `[GIF] ${title}: ${gifUrl}`);
+        await sendExternalGifEvent(identity, roomId, title, gifUrl);
+        await sendTextNotice(identity, roomId, `[GIF] Shared GIF: ${title}. Open Transfers to preview/download.`);
       }
 
       setStatusText('GIF shared to chat.');
@@ -617,6 +643,11 @@ export function KodiakAttachmentBridge({ identity }: KodiakAttachmentBridgeProps
 
   async function downloadAttachment(attachment: SharedAttachment) {
     try {
+      if (!attachment.url.startsWith('mxc://')) {
+        window.open(attachment.url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
       const response = await fetch(getMatrixDownloadUrl(identity, attachment.url), {
         headers: {
           Authorization: `Bearer ${identity.accessToken}`,
@@ -741,3 +772,7 @@ export function KodiakAttachmentBridge({ identity }: KodiakAttachmentBridgeProps
     </aside>
   );
 }
+
+
+
+

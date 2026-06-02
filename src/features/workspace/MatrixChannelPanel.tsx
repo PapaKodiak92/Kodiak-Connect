@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import { playKodiakSound, unlockKodiakSounds } from '../audio/kodiakSounds';
@@ -1749,6 +1749,42 @@ export function MatrixChannelPanel({
     setAvatarPreviewUrl(URL.createObjectURL(file));
   }
 
+  async function readAvatarDataUrl(file: File) {
+    const sourceDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Could not read profile picture.'));
+      reader.readAsDataURL(file);
+    });
+
+    return await new Promise<string>((resolve) => {
+      const image = new Image();
+
+      image.onload = () => {
+        const maxSize = 256;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext('2d');
+
+        if (!context) {
+          resolve(sourceDataUrl);
+          return;
+        }
+
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.86));
+      };
+
+      image.onerror = () => resolve(sourceDataUrl);
+      image.src = sourceDataUrl;
+    });
+  }
+
   async function handleSaveAccountSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1813,15 +1849,39 @@ export function MatrixChannelPanel({
             [identity.userId]: savedAvatarProfile?.bio ?? nextBio,
           }));
         } catch (avatarError) {
-          avatarUploadFailed = true;
-          console.error('[Kodiak Connect] Failed to upload profile avatar', avatarError);
-          setSettingsErrorText('Profile text saved, but the profile picture upload failed. Try a smaller PNG/JPG, or try again after media upload is fixed.');
+          console.error('[Kodiak Connect] Failed to upload profile avatar through Matrix media. Falling back to optimized backend avatar data URL.', avatarError);
+
+          try {
+            nextAvatarSource = await readAvatarDataUrl(avatarFile);
+
+            const savedAvatarProfile = await saveKodiakProfile(identity, {
+              avatarUrl: nextAvatarSource,
+              bio: nextBio,
+              displayName: nextDisplayName,
+            });
+
+            setDisplayNamesByUserId((currentNames) => ({
+              ...currentNames,
+              [identity.userId]: savedAvatarProfile?.displayName ?? nextDisplayName,
+            }));
+
+            setProfileBiosByUserId((currentBios) => ({
+              ...currentBios,
+              [identity.userId]: savedAvatarProfile?.bio ?? nextBio,
+            }));
+          } catch (fallbackError) {
+            avatarUploadFailed = true;
+            console.error('[Kodiak Connect] Failed to save fallback profile avatar', fallbackError);
+            setSettingsErrorText('Profile text saved, but the profile picture upload failed. Try a smaller PNG/JPG.');
+          }
         }
       }
 
       if (nextAvatarSource) {
-        const authenticatedAvatarUrl = await getAuthenticatedMatrixMediaObjectUrl(identity, nextAvatarSource, 96, 96).catch(() => null);
-        const savedAvatarUrl = authenticatedAvatarUrl ?? avatarPreviewUrl ?? '';
+        const authenticatedAvatarUrl = nextAvatarSource.startsWith('mxc://')
+          ? await getAuthenticatedMatrixMediaObjectUrl(identity, nextAvatarSource, 96, 96).catch(() => null)
+          : nextAvatarSource;
+        const savedAvatarUrl = authenticatedAvatarUrl || avatarPreviewUrl || '';
 
         if (savedAvatarUrl) {
           setAvatarUrlsByUserId((currentAvatars) => ({
@@ -1960,7 +2020,7 @@ export function MatrixChannelPanel({
                       disabled={!parsedMessage.reply.eventId}
                       title={`Replying to ${parsedMessage.reply.sender}: ${parsedMessage.reply.preview}`}
                     >
-                      <span className="matrix-reply-thread-link__arrow" aria-hidden="true">â†ª</span>
+                      <span className="matrix-reply-thread-link__arrow" aria-hidden="true">Ã¢â€ Âª</span>
                       <strong>{parsedMessage.reply.sender}</strong>
                       <span className="matrix-reply-thread-link__separator" aria-hidden="true"> - </span>
                       <span className="matrix-reply-thread-link__preview">{parsedMessage.reply.preview}</span>
@@ -2556,7 +2616,7 @@ export function MatrixChannelPanel({
               aria-label="Close Safety Center"
               onClick={() => setIsSafetyCenterOpen(false)}
             >
-              Ã—
+              Ãƒâ€”
             </button>
 
             <div className="kodiak-safety-center-modal__header">
@@ -2628,7 +2688,7 @@ export function MatrixChannelPanel({
             onClick={(event) => event.stopPropagation()}
           >
             <button type="button" className="kodiak-friend-center-modal__close" aria-label="Close Friend Center" onClick={onCloseFriendCenter}>
-              Ã—
+              Ãƒâ€”
             </button>
 
             <div className="kodiak-friend-center-modal__header">
@@ -2820,7 +2880,7 @@ export function MatrixChannelPanel({
               aria-label="Close profile settings"
               onClick={() => setIsSettingsOpen(false)}
             >
-              Ã—
+              Ãƒâ€”
             </button>
             <div className="kodiak-confirm-modal__header">
               <p className="eyebrow eyebrow--ember">Account settings</p>
@@ -2964,3 +3024,6 @@ export function MatrixChannelPanel({
     </section>
   );
 }
+
+
+

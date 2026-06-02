@@ -38,6 +38,12 @@ function formatSize(size?: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function isAuthenticatedMatrixMediaUrl(mediaUrl: string) {
+  return mediaUrl.includes('/_matrix/client/v1/media/') ||
+    mediaUrl.includes('/_matrix/media/v3/') ||
+    mediaUrl.includes('/_matrix/media/r0/');
+}
+
 async function fetchAuthenticatedBlob(identity: MatrixLoginIdentity, mediaUrl: string) {
   const response = await fetch(mediaUrl, {
     headers: {
@@ -99,6 +105,12 @@ function createDownloadButton(
     button.textContent = 'Downloading...';
 
     try {
+      if (!isAuthenticatedMatrixMediaUrl(mediaUrl)) {
+        window.open(mediaUrl, '_blank', 'noopener,noreferrer');
+        button.textContent = originalText;
+        return;
+      }
+
       const blob = await fetchAuthenticatedBlob(identity, mediaUrl);
       const objectUrl = URL.createObjectURL(blob);
       trackObjectUrl(objectUrl);
@@ -132,6 +144,11 @@ function loadPreview(
   mediaUrl: string,
   trackObjectUrl: (url: string) => void,
 ) {
+  if (!isAuthenticatedMatrixMediaUrl(mediaUrl)) {
+    previewElement.src = mediaUrl;
+    return;
+  }
+
   void fetchAuthenticatedBlob(identity, mediaUrl)
     .then((blob) => {
       const objectUrl = URL.createObjectURL(blob);
@@ -244,3 +261,6 @@ export function MatrixMediaDomEnhancer({ identity }: MatrixMediaDomEnhancerProps
 
   return null;
 }
+
+
+
