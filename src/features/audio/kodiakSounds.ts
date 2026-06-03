@@ -5,12 +5,32 @@
   | 'ringingSendCall'
   | 'ringingReceiveCall';
 
-const SOUND_PATHS: Record<KodiakSoundName, string> = {
-  messageSent: '/sounds/message_sent.mp3',
-  messageReceived: '/sounds/message_received.mp3',
-  notify: '/sounds/notify.mp3',
-  ringingSendCall: '/sounds/ringing_send_call.mp3',
-  ringingReceiveCall: '/sounds/ringing_receive_call.mp3',
+interface KodiakSoundSource {
+  mp3: string;
+  wav: string;
+}
+
+const SOUND_PATHS: Record<KodiakSoundName, KodiakSoundSource> = {
+  messageSent: {
+    mp3: '/sounds/message_sent.mp3',
+    wav: '/sounds/message_sent.wav',
+  },
+  messageReceived: {
+    mp3: '/sounds/message_received.mp3',
+    wav: '/sounds/message_received.wav',
+  },
+  notify: {
+    mp3: '/sounds/notify.mp3',
+    wav: '/sounds/notify.wav',
+  },
+  ringingSendCall: {
+    mp3: '/sounds/ringing_send_call.mp3',
+    wav: '/sounds/ringing_send_call.wav',
+  },
+  ringingReceiveCall: {
+    mp3: '/sounds/ringing_receive_call.mp3',
+    wav: '/sounds/ringing_receive_call.wav',
+  },
 };
 
 const SOUND_COOLDOWNS_MS: Partial<Record<KodiakSoundName, number>> = {
@@ -22,6 +42,17 @@ const SOUND_COOLDOWNS_MS: Partial<Record<KodiakSoundName, number>> = {
 const lastPlayedAtBySound = new Map<KodiakSoundName, number>();
 const audioPool = new Map<KodiakSoundName, HTMLAudioElement>();
 
+function getBestSoundPath(soundName: KodiakSoundName) {
+  const testAudio = document.createElement('audio');
+  const paths = SOUND_PATHS[soundName];
+
+  if (testAudio.canPlayType('audio/wav') || testAudio.canPlayType('audio/wave') || testAudio.canPlayType('audio/x-wav')) {
+    return paths.wav;
+  }
+
+  return paths.mp3;
+}
+
 function getAudio(soundName: KodiakSoundName) {
   const existingAudio = audioPool.get(soundName);
 
@@ -29,7 +60,7 @@ function getAudio(soundName: KodiakSoundName) {
     return existingAudio;
   }
 
-  const audio = new Audio(SOUND_PATHS[soundName]);
+  const audio = new Audio(getBestSoundPath(soundName));
   audio.preload = 'auto';
   audioPool.set(soundName, audio);
   return audio;
