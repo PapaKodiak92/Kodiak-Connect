@@ -210,7 +210,7 @@ echo 'Cleaning generated Linux build folders before npm ci...'
 if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
   sudo -n chown -R "`$(id -u):`$(id -g)" node_modules src-tauri/target "`$HOME/.npm" 2>/dev/null || true
 fi
-rm -rf node_modules src-tauri/target
+rm -rf node_modules src-tauri/target dist
 mkdir -p "`$HOME/.npm"
 npm cache verify || true
 
