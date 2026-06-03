@@ -125,6 +125,18 @@ function writeKodiakProfileCache(cache: {
   window.localStorage.setItem(KODIAK_PROFILE_CACHE_KEY, JSON.stringify(cache));
 }
 
+function isDefaultKodiakProfile(userId: string, profile: { avatarUrl?: string; bio?: string; createdAt?: number; displayName?: string; updatedAt?: number }) {
+  const defaultDisplayName = getDisplayName(userId);
+
+  return (
+    (profile.displayName ?? defaultDisplayName) === defaultDisplayName &&
+    !(profile.bio ?? '').trim() &&
+    !(profile.avatarUrl ?? '').trim() &&
+    !Number(profile.createdAt ?? 0) &&
+    !Number(profile.updatedAt ?? 0)
+  );
+}
+
 const RESERVED_DISPLAY_NAMES = new Set([
   'admin',
   'administrator',
@@ -798,6 +810,10 @@ export function MatrixChannelPanel({
           const nextNames = { ...currentNames };
 
           for (const [userId, profile] of Object.entries(profilesByUserId)) {
+            if (isDefaultKodiakProfile(userId, profile) && nextNames[userId] && nextNames[userId] !== getDisplayName(userId)) {
+              continue;
+            }
+
             const nextDisplayName = profile.displayName || getDisplayName(userId);
 
             if (nextNames[userId] !== nextDisplayName) {
@@ -814,6 +830,10 @@ export function MatrixChannelPanel({
           const nextBios = { ...currentBios };
 
           for (const [userId, profile] of Object.entries(profilesByUserId)) {
+            if (isDefaultKodiakProfile(userId, profile) && (nextBios[userId] ?? '').trim()) {
+              continue;
+            }
+
             const nextBio = profile.bio ?? '';
 
             if (nextBios[userId] !== nextBio) {
