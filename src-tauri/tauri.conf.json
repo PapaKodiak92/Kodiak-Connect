@@ -1,56 +1,67 @@
 {
-    "$schema":  "https://schema.tauri.app/config/2",
-    "productName":  "Kodiak Connect",
-    "version":  "1.1.8",
-    "identifier":  "com.kodiakholdings.kodiakconnect",
-    "build":  {
-                  "beforeDevCommand":  "npm run dev",
-                  "devUrl":  "http://localhost:5173",
-                  "beforeBuildCommand":  "npm run build",
-                  "frontendDist":  "../dist"
-              },
-    "app":  {
-                "windows":  [
-                                {
-                                    "label":  "main",
-                                    "title":  "Kodiak Connect",
-                                    "width":  920,
-                                    "height":  560,
-                                    "minWidth":  760,
-                                    "minHeight":  480,
-                                    "decorations":  false,
-                                    "resizable":  true,
-                                    "visible":  false,
-                                    "dragDropEnabled":  false
-                                }
-                            ],
-                "security":  {
-                                 "csp":  null
-                             }
-            },
-    "bundle":  {
-                   "active":  true,
-                   "targets":  [
-                                   "msi",
-                                   "deb"
-                               ],
-                   "publisher":  "Kodiak Holdings",
-                   "icon":  [
-                                "icons/icon.png",
-                                "icons/icon.ico"
-                            ],
-                   "shortDescription":  "Private communication client",
-                   "longDescription":  "Kodiak Connect is a secure communication client for private groups across web, desktop, and Android.",
-                   "createUpdaterArtifacts":  true
-               },
-    "plugins":  {
-                    "updater":  {
-                                    "active":  true,
-                                    "endpoints":  [
-                                                      "https://updates.kodiak-connect.com/manifest.json"
-                                                  ],
-                                    "dialog":  true,
-                                    "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0QzVCMURFRENEMkIxNzIKUldSeXNkTGMzckhGcE8wbVluN3ZkUnpWSFo5TjNuUmdZUEszVnB1Z0J0aHhqaG9Fc3Z1T2lKWUsK"
-                                }
-                }
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Kodiak Connect",
+  "version": "1.1.8",
+  "identifier": "com.kodiakholdings.kodiakconnect",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Kodiak Connect",
+        "width": 920,
+        "height": 560,
+        "minWidth": 760,
+        "minHeight": 480,
+        "decorations": false,
+        "resizable": true,
+        "visible": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "msi",
+      "deb"
+    ],
+    "publisher": "Kodiak Holdings",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "Private communication client",
+    "longDescription": "Kodiak Connect is a secure communication client for private groups across web, desktop, and Android.",
+    "createUpdaterArtifacts": true,
+    "linux": {
+      "deb": {
+        "depends": [
+          "gstreamer1.0-libav",
+          "gstreamer1.0-pipewire",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-pulseaudio"
+        ]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://updates.kodiak-connect.com/manifest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0QzVCMURFRENEMkIxNzIKUldSeXNkTGMzckhGcE8wbVluN3ZkUnpWSFo5TjNuUmdZUEszVnB1Z0J0aHhqaG9Fc3Z1T2lKWUsK"
+    }
+  }
 }
