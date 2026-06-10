@@ -12,6 +12,7 @@ const FRIENDS_FILE = join(DATA_DIR, "friends.json");
 const PROFILES_FILE = join(DATA_DIR, "profiles.json");
 const BLOCKS_FILE = join(DATA_DIR, "blocks.json");
 const REPORTS_FILE = join(DATA_DIR, "reports.json");
+const PUSH_SUBSCRIPTIONS_FILE = join(DATA_DIR, "push-subscriptions.json");
 
 const PORT = Number(process.env.KODIAK_BACKEND_PORT ?? 8787);
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -244,6 +245,24 @@ function sanitizeReportStatus(status) {
   return allowedStatuses.has(status) ? status : null;
 }
 
+function sanitizePushPlatform(platform) {
+  const allowedPlatforms = new Set(["android", "web", "tauri-desktop"]);
+  return allowedPlatforms.has(platform) ? platform : null;
+}
+
+function sanitizePushProvider(provider) {
+  const allowedProviders = new Set(["fcm", "web-push", "local"]);
+  return allowedProviders.has(provider) ? provider : null;
+}
+
+function getPushDeviceKey(userId, deviceId) {
+  return `${userId}|${deviceId}`;
+}
+
+function getPushDevicesForUser(pushStore, userId) {
+  return Object.values(pushStore).filter((device) => device?.userId === userId && device.enabled !== false);
+}
+
 function sanitizeReportForViewer(report, viewerUserId) {
   if (isPlatformModerator(viewerUserId)) {
     return {
@@ -284,6 +303,85 @@ function getReportForModeration(reportsStore, reportId, actorUserId) {
   }
 
   return { report };
+}
+
+async function handlePushRegister(request, response, corsHeaders) {
+  const body = await readRequestBody(request);
+  const userId = getCurrentUserId(request, body);
+  const deviceId = String(body.deviceId ?? "").trim().slice(0, 160);
+  const platform = sanitizePushPlatform(body.platform);
+  const provider = sanitizePushProvider(body.provider);
+  const token = String(body.token ?? "").trim();
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  if (!deviceId || !platform || !provider || token.length < 8 || token.length > 4096) {
+    sendJson(response, 400, { error: "Invalid push registration." }, corsHeaders);
+    return;
+  }
+
+  const pushStore = await readJsonFile(PUSH_SUBSCRIPTIONS_FILE, {});
+  const deviceKey = getPushDeviceKey(userId, deviceId);
+  const existingDevice = pushStore[deviceKey] ?? {};
+  const updatedAt = now();
+
+  pushStore[deviceKey] = {
+    ...existingDevice,
+    appVersion: String(body.appVersion ?? existingDevice.appVersion ?? "").slice(0, 64),
+    deviceId,
+    enabled: true,
+    platform,
+    provider,
+    registeredAt: existingDevice.registeredAt ?? updatedAt,
+    token,
+    updatedAt,
+    userAgent: String(body.userAgent ?? existingDevice.userAgent ?? "").slice(0, 300),
+    userId,
+  };
+
+  await writeJsonFile(PUSH_SUBSCRIPTIONS_FILE, pushStore);
+  sendJson(response, 200, { ok: true, deviceCount: getPushDevicesForUser(pushStore, userId).length }, corsHeaders);
+}
+
+async function handlePushUnregister(request, response, corsHeaders) {
+  const body = await readRequestBody(request);
+  const userId = getCurrentUserId(request, body);
+  const deviceId = String(body.deviceId ?? "").trim().slice(0, 160);
+
+  if (!isValidMatrixUserId(userId) || !deviceId) {
+    sendJson(response, 400, { error: "Invalid push unregister request." }, corsHeaders);
+    return;
+  }
+
+  const pushStore = await readJsonFile(PUSH_SUBSCRIPTIONS_FILE, {});
+  delete pushStore[getPushDeviceKey(userId, deviceId)];
+
+  await writeJsonFile(PUSH_SUBSCRIPTIONS_FILE, pushStore);
+  sendJson(response, 200, { ok: true, deviceCount: getPushDevicesForUser(pushStore, userId).length }, corsHeaders);
+}
+
+async function handlePushTest(request, response, corsHeaders) {
+  const body = await readRequestBody(request);
+  const userId = getCurrentUserId(request, body);
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  const pushStore = await readJsonFile(PUSH_SUBSCRIPTIONS_FILE, {});
+  const devices = getPushDevicesForUser(pushStore, userId);
+
+  sendJson(response, 200, {
+    ok: true,
+    deviceCount: devices.length,
+    message: devices.length
+      ? "Push device registration is stored. Firebase delivery is the next checkpoint."
+      : "No push devices are registered for this user yet.",
+  }, corsHeaders);
 }
 
 async function handleBlockState(request, response, corsHeaders, url) {
@@ -1002,6 +1100,21 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, { ok: true, service: "kodiak-connect-backend", time: new Date().toISOString() }, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/push/register") {
+      await handlePushRegister(request, response, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/push/unregister") {
+      await handlePushUnregister(request, response, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/push/test") {
+      await handlePushTest(request, response, corsHeaders);
       return;
     }
 

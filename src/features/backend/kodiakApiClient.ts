@@ -5,6 +5,8 @@ export type KodiakFriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
 export type KodiakReportCategory = 'harassment' | 'spam' | 'scam' | 'threats' | 'impersonation' | 'other';
 export type KodiakReportStatus = 'open' | 'reviewed' | 'dismissed';
 export type KodiakReportActionType = 'reply' | 'note' | 'status' | 'archive' | 'delete';
+export type KodiakPushPlatform = 'android' | 'web' | 'tauri-desktop';
+export type KodiakPushProvider = 'fcm' | 'web-push' | 'local';
 
 export interface KodiakReportAction {
   actorUserId: string;
@@ -84,6 +86,20 @@ interface KodiakBlockStateResponse {
   statuses?: Record<string, KodiakFriendStatus>;
 }
 
+export interface KodiakPushRegistration {
+  appVersion?: string;
+  deviceId: string;
+  platform: KodiakPushPlatform;
+  provider: KodiakPushProvider;
+  token: string;
+  userAgent?: string;
+}
+
+interface KodiakPushRegisterResponse {
+  deviceCount?: number;
+  ok?: boolean;
+}
+
 const KODIAK_API_BASE_URL =
   (import.meta.env.VITE_KODIAK_API_BASE_URL as string | undefined)?.trim() || 'https://api.kodiak-connect.com';
 
@@ -118,6 +134,11 @@ async function postKodiak<T>(identity: MatrixLoginIdentity, path: string, body: 
   }
 
   return (await response.json()) as T;
+}
+
+export async function registerKodiakPushDevice(identity: MatrixLoginIdentity, registration: KodiakPushRegistration) {
+  const data = await postKodiak<KodiakPushRegisterResponse>(identity, '/api/push/register', { ...registration });
+  return data.ok === true;
 }
 
 export async function sendKodiakPresenceHeartbeat(

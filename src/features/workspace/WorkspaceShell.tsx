@@ -26,6 +26,7 @@ import {
   saveOfficialSpaceAcknowledgement,
 } from '../policy/policyAcknowledgementStorage';
 import { playKodiakSound } from '../audio/kodiakSounds';
+import { initializeKodiakPushNotifications } from '../notifications/notificationClient';
 import { ChannelSidebar, type ChannelActivityById } from './ChannelSidebar';
 import { ChatPlaceholder } from './ChatPlaceholder';
 import { MatrixChannelPanel } from './MatrixChannelPanel';
@@ -259,6 +260,12 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
   useEffect(() => {
     friendStatusByUserIdRef.current = friendStatusByUserId;
   }, [friendStatusByUserId]);
+
+  useEffect(() => {
+    void initializeKodiakPushNotifications(identity).catch((error) => {
+      console.warn('[Kodiak Connect] Push notification setup failed', error);
+    });
+  }, [identity]);
 
   useEffect(() => {
     channelActivityRef.current = channelActivity;
