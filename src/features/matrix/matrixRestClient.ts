@@ -25,6 +25,19 @@ export interface MatrixTextMessage {
   sender: string;
 }
 
+export type MatrixCallKind = 'voice' | 'video';
+export type MatrixCallStatus = 'invite' | 'accept' | 'decline' | 'end';
+
+export interface MatrixCallEvent {
+  callId: string;
+  callKind: MatrixCallKind;
+  createdAt: number;
+  eventId: string;
+  sender: string;
+  status: MatrixCallStatus;
+  targetUserId: string;
+}
+
 export interface MatrixTypingState {
   nextBatch?: string;
   userIds?: string[];
@@ -111,6 +124,9 @@ interface MatrixSyncResponse {
 interface MatrixEphemeralEvent {
   content?: {
     bio?: string;
+    call_id?: string;
+    call_kind?: MatrixCallKind;
+    status?: MatrixCallStatus;
     created_at?: number;
     requester_user_id?: string;
     response?: MatrixFriendResponseState;
@@ -739,6 +755,80 @@ export async function loadRecentProfileBios(identity: MatrixLoginIdentity, roomI
   }
 
   return Object.fromEntries([...biosByUserId.entries()].map(([userId, value]) => [userId, value.bio]));
+}
+
+export async function sendKodiakCallEvent(
+  identity: MatrixLoginIdentity,
+  roomId: string,
+  call: { callId: string; callKind: MatrixCallKind; status: MatrixCallStatus; targetUserId: string },
+) {
+  const txnId = Date.now() + '-' + Math.random().toString(36).slice(2);
+
+  await matrixRequest<{ event_id: string }>(
+    identity,
+    '/_matrix/client/v3/rooms/' + encodePathValue(roomId) + '/send/com.kodiak.call/' + encodePathValue(txnId),
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        call_id: call.callId,
+        call_kind: call.callKind,
+        created_at: Date.now(),
+        status: call.status,
+        target_user_id: call.targetUserId,
+      }),
+    },
+  );
+}
+
+export async function loadRecentKodiakCallEvents(identity: MatrixLoginIdentity, roomId: string, limit = 80) {
+  const data = await matrixRequest<MatrixMessagesResponse>(
+    identity,
+    '/_matrix/client/v3/rooms/' + encodePathValue(roomId) + '/messages?dir=b&limit=' + limit,
+  );
+
+  return (data.chunk ?? [])
+    .filter((event) => {
+      const content = event.content as
+        | (NonNullable<typeof event.content> & {
+            call_id?: string;
+            call_kind?: MatrixCallKind;
+            status?: MatrixCallStatus;
+            target_user_id?: string;
+          })
+        | undefined;
+      const status = content?.status;
+
+      return (
+        event.type === 'com.kodiak.call' &&
+        Boolean(event.event_id) &&
+        Boolean(event.sender) &&
+        Boolean(content?.call_id) &&
+        Boolean(content?.target_user_id) &&
+        (content?.call_kind === 'voice' || content?.call_kind === 'video') &&
+        (status === 'invite' || status === 'accept' || status === 'decline' || status === 'end')
+      );
+    })
+    .map<MatrixCallEvent>((event) => {
+      const content = event.content as
+        | (NonNullable<typeof event.content> & {
+            call_id?: string;
+            call_kind?: MatrixCallKind;
+            status?: MatrixCallStatus;
+            target_user_id?: string;
+          })
+        | undefined;
+
+      return {
+        callId: content?.call_id ?? '',
+        callKind: content?.call_kind === 'video' ? 'video' : 'voice',
+        createdAt: content?.created_at ?? event.origin_server_ts ?? 0,
+        eventId: event.event_id ?? '',
+        sender: event.sender ?? '',
+        status: content?.status ?? 'invite',
+        targetUserId: content?.target_user_id ?? '',
+      };
+    })
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function sendTextMessage(identity: MatrixLoginIdentity, roomId: string, body: string, replyToEventId?: string) {
