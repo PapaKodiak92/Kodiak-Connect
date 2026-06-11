@@ -610,7 +610,12 @@ export function MatrixChannelPanel({
   const [activeCallSession, setActiveCallSession] = useState<KodiakCallSession | null>(null);
   const [callStatusText, setCallStatusText] = useState<string | null>(null);
   const [isCallMuted, setIsCallMuted] = useState(false);
+  const [isCallCameraEnabled, setIsCallCameraEnabled] = useState(false);
+  const [hasRemoteCallVideo, setHasRemoteCallVideo] = useState(false);
   const [callDurationTick, setCallDurationTick] = useState(0);
+  const [speakingCallParticipant, setSpeakingCallParticipant] = useState<'self' | 'remote' | null>(null);
+  const callSpeakingCleanupRefs = useRef<Array<() => void>>([]);
+  const callSpeakingDetectorKeysRef = useRef<Set<'self' | 'remote'>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -1097,6 +1102,7 @@ export function MatrixChannelPanel({
         if (callEvent.status === 'accept') {
           setActiveCallSession({ ...currentCall, connectedAt: currentCall.connectedAt ?? Date.now(), status: 'connected' });
           stopKodiakCallSounds();
+    stopKodiakSpeakingDetectors();
           setCallStatusText(callerDisplayName + ' accepted the call.');
           void playKodiakSound('notify', 0.55, { force: true });
           continue;
@@ -1731,7 +1737,98 @@ export function MatrixChannelPanel({
     setOpenActionMenu(null);
   }
 
+  function stopKodiakSpeakingDetectors() {
+    for (const cleanup of callSpeakingCleanupRefs.current) {
+      cleanup();
+    }
+
+    callSpeakingCleanupRefs.current = [];
+    callSpeakingDetectorKeysRef.current.clear();
+    setSpeakingCallParticipant(null);
+  }
+
+  function startKodiakSpeakingDetector(stream: MediaStream, participant: 'self' | 'remote') {
+    const audioTracks = stream.getAudioTracks();
+
+    if (!audioTracks.length || callSpeakingDetectorKeysRef.current.has(participant)) {
+      return;
+    }
+
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      return;
+    }
+
+    const audioContext = new AudioContextConstructor();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(new MediaStream(audioTracks));
+    const data = new Uint8Array(1024);
+
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.25;
+    source.connect(analyser);
+
+    callSpeakingDetectorKeysRef.current.add(participant);
+
+    let animationFrameId = 0;
+    let speakingFrames = 0;
+    let silentFrames = 0;
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+
+      let sum = 0;
+
+      for (const value of data) {
+        const normalized = (value - 128) / 128;
+        sum += normalized * normalized;
+      }
+
+      const rms = Math.sqrt(sum / data.length);
+      const isSpeakingNow = rms > 0.012;
+
+      if (isSpeakingNow) {
+        speakingFrames += 1;
+        silentFrames = 0;
+
+        if (speakingFrames >= 2) {
+          setSpeakingCallParticipant(participant);
+        }
+      } else {
+        silentFrames += 1;
+        speakingFrames = 0;
+
+        if (silentFrames >= 10) {
+          setSpeakingCallParticipant((current) => (current === participant ? null : current));
+        }
+      }
+
+      animationFrameId = window.requestAnimationFrame(tick);
+    };
+
+    tick();
+
+    callSpeakingCleanupRefs.current.push(() => {
+      window.cancelAnimationFrame(animationFrameId);
+      callSpeakingDetectorKeysRef.current.delete(participant);
+
+      try {
+        source.disconnect();
+        analyser.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+
+      void audioContext.close().catch(() => undefined);
+    });
+  }
+
   function attachKodiakLocalMediaStream(stream: MediaStream) {
+    startKodiakSpeakingDetector(stream, 'self');
+    setIsCallCameraEnabled(stream.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled));
     const videoElement = localCallVideoRef.current;
 
     if (!videoElement || stream.getVideoTracks().length === 0) {
@@ -1747,6 +1844,16 @@ export function MatrixChannelPanel({
   }
 
   function attachKodiakRemoteMediaStream(stream: MediaStream) {
+    startKodiakSpeakingDetector(stream, 'remote');
+
+    const remoteVideoTracks = stream.getVideoTracks();
+    setHasRemoteCallVideo(remoteVideoTracks.some((track) => track.readyState === 'live'));
+
+    for (const track of remoteVideoTracks) {
+      track.onmute = () => setHasRemoteCallVideo(false);
+      track.onended = () => setHasRemoteCallVideo(false);
+      track.onunmute = () => setHasRemoteCallVideo(true);
+    }
     const videoElement = remoteCallVideoRef.current;
 
     if (videoElement && stream.getVideoTracks().length > 0) {
@@ -1756,7 +1863,6 @@ export function MatrixChannelPanel({
         console.warn('[Kodiak Connect] Failed to play remote call video', error);
       });
     }
-
     attachKodiakRemoteAudioStream(stream);
   }
 
@@ -1781,6 +1887,8 @@ export function MatrixChannelPanel({
     kodiakVoiceCallPeerRef.current = null;
     pendingCallOfferSdpRef.current = null;
     setIsCallMuted(false);
+    setIsCallCameraEnabled(false);
+    setHasRemoteCallVideo(false);
 
     if (remoteCallAudioRef.current) {
       remoteCallAudioRef.current.srcObject = null;
@@ -1881,10 +1989,14 @@ export function MatrixChannelPanel({
 
   async function handleKodiakWebRtcCallEvent(callEvent: MatrixCallEvent, currentCall: KodiakCallSession) {
     try {
+      if (callEvent.sender === identity.userId) {
+        return;
+      }
+
       if (callEvent.status === 'offer' && callEvent.sdp) {
         pendingCallOfferSdpRef.current = callEvent.sdp;
 
-        if (currentCall.direction === 'incoming' && currentCall.status === 'connected') {
+        if (currentCall.status === 'connected') {
           await answerKodiakWebRtcOffer(currentCall, callEvent.sdp);
         }
 
@@ -1908,12 +2020,66 @@ export function MatrixChannelPanel({
     }
   }
 
+  async function toggleKodiakCallCamera() {
+    const session = activeCallSessionRef.current;
+    const peer = kodiakVoiceCallPeerRef.current;
+
+    if (!session || session.status !== 'connected' || !peer) {
+      return;
+    }
+
+    const nextCameraEnabled = !isCallCameraEnabled;
+
+    try {
+      setCallStatusText(nextCameraEnabled ? 'Turning camera on...' : 'Turning camera off...');
+
+      const offerSdp = await peer.setCameraEnabled(nextCameraEnabled);
+      setIsCallCameraEnabled(peer.hasCameraEnabled());
+
+      if (offerSdp) {
+        await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
+          callId: session.callId,
+          callKind: session.callKind,
+          sdp: offerSdp,
+          status: 'offer',
+          targetUserId: session.targetUserId,
+        });
+      }
+
+      setCallStatusText(nextCameraEnabled ? 'Camera on.' : 'Camera off.');
+    } catch (error) {
+      setIsCallCameraEnabled(peer.hasCameraEnabled());
+      setCallStatusText(error instanceof Error ? error.message : 'Could not change camera state.');
+    }
+  }
+
   function toggleKodiakCallMute() {
     setIsCallMuted((currentValue) => {
       const nextValue = !currentValue;
       kodiakVoiceCallPeerRef.current?.setMuted(nextValue);
       return nextValue;
     });
+  }
+
+  function renderKodiakCallParticipant(userId: string, label: string, modifier = '') {
+    const classes = ['kodiak-call-participant'];
+
+    if (modifier && speakingCallParticipant === modifier) {
+      classes.push('kodiak-call-participant--speaking');
+    }
+
+    if (modifier) {
+      classes.push('kodiak-call-participant--' + modifier);
+    }
+
+    return (
+      <div className={classes.join(' ')} key={userId}>
+        <div className="kodiak-call-participant__avatar">
+          {renderUserAvatar(userId, 'matrix-avatar--call')}
+        </div>
+        <span>{label}</span>
+      </div>
+    );
   }
 
   function formatKodiakCallDuration(startedAt: number, tick: number) {
@@ -2776,6 +2942,10 @@ export function MatrixChannelPanel({
                   : 'Outgoing ' + getCallKindLabel(activeCallSession.callKind)}
             </strong>
             <span>{activeCallSession.displayName}</span>
+            <div className="kodiak-call-panel__participants">
+              {renderKodiakCallParticipant(identity.userId, getKnownDisplayName(identity.userId), 'self')}
+              {renderKodiakCallParticipant(activeCallSession.targetUserId, activeCallSession.displayName, 'remote')}
+            </div>
             {activeCallSession.status === 'connected' ? (
               <span className="kodiak-call-panel__duration">
                 {formatKodiakCallDuration(activeCallSession.connectedAt ?? activeCallSession.startedAt, callDurationTick)}
@@ -2783,18 +2953,39 @@ export function MatrixChannelPanel({
             ) : null}
           </div>
           <audio ref={remoteCallAudioRef} className="kodiak-call-audio" autoPlay playsInline />
-          <div className={'kodiak-call-stage kodiak-call-stage--' + activeCallSession.callKind}>
-            {activeCallSession.callKind === 'video' ? (
+          <div className={'kodiak-call-stage kodiak-call-stage--' + (activeCallSession.callKind === 'video' || isCallCameraEnabled || hasRemoteCallVideo ? 'video' : 'voice')}>
+            {activeCallSession.callKind === 'video' || isCallCameraEnabled || hasRemoteCallVideo ? (
               <>
                 <video ref={remoteCallVideoRef} className="kodiak-call-stage__remote" autoPlay playsInline />
                 <video ref={localCallVideoRef} className="kodiak-call-stage__local" autoPlay muted playsInline />
               </>
             ) : (
-              <div className="kodiak-call-stage__voice">
-                <span className="kodiak-call-stage__pulse" aria-hidden="true" />
-                <strong>{activeCallSession.displayName}</strong>
-                <small>{activeCallSession.status === 'connected' ? 'Voice connected' : 'Connecting voice...'}</small>
+              <>
+                {callStatusText ? (
+                  <div className="kodiak-call-panel__notice">{callStatusText}</div>
+                ) : null}
+                <div className="kodiak-call-stage__voice">
+                <div className="kodiak-call-stage__avatars" aria-label="Call participants">
+                  <div className={'kodiak-call-stage__avatar-wrap kodiak-call-stage__avatar-wrap--self' + (speakingCallParticipant === 'self' ? ' kodiak-call-stage__avatar-wrap--speaking' : '')}>
+                    {renderUserAvatar(identity.userId, 'matrix-avatar--call-stage')}
+                    <span>{getKnownDisplayName(identity.userId)}</span>
+                  </div>
+                  <div className={'kodiak-call-stage__avatar-wrap kodiak-call-stage__avatar-wrap--remote' + (speakingCallParticipant === 'remote' ? ' kodiak-call-stage__avatar-wrap--speaking' : '')}>
+                    {renderUserAvatar(activeCallSession.targetUserId, 'matrix-avatar--call-stage')}
+                    <span>{activeCallSession.displayName}</span>
+                  </div>
+                </div>
+                <small>
+                  {speakingCallParticipant === 'self'
+                    ? getKnownDisplayName(identity.userId) + ' is speaking'
+                    : speakingCallParticipant === 'remote'
+                      ? activeCallSession.displayName + ' is speaking'
+                      : activeCallSession.status === 'connected'
+                        ? 'Voice connected'
+                        : 'Connecting voice...'}
+                </small>
               </div>
+              </>
             )}
           </div>
           <div className="kodiak-call-panel__actions">
@@ -2809,9 +3000,14 @@ export function MatrixChannelPanel({
               </>
             ) : null}
             {activeCallSession.status === 'connected' ? (
-              <button type="button" className="kodiak-call-panel__mute" onClick={toggleKodiakCallMute}>
-                {isCallMuted ? 'Unmute' : 'Mute'}
-              </button>
+              <>
+                <button type="button" className="kodiak-call-panel__mute" onClick={toggleKodiakCallMute}>
+                  {isCallMuted ? 'Unmute' : 'Mute'}
+                </button>
+                <button type="button" className="kodiak-call-panel__camera" onClick={() => void toggleKodiakCallCamera()}>
+                  {isCallCameraEnabled ? 'Camera Off' : 'Camera On'}
+                </button>
+              </>
             ) : null}
             <button type="button" className="kodiak-call-panel__end" onClick={() => void endKodiakCall()}>
               End

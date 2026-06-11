@@ -35,6 +35,8 @@ export class KodiakVoiceCallPeer {
   private readonly peerConnection: RTCPeerConnection;
   private readonly pendingIceCandidates: RTCIceCandidateInit[] = [];
   private localStream: MediaStream | null = null;
+  private videoSender: RTCRtpSender | null = null;
+  private localVideoTrack: MediaStreamTrack | null = null;
 
   constructor(private readonly options: KodiakVoiceCallPeerOptions) {
     this.peerConnection = new RTCPeerConnection(KODIAK_RTC_CONFIGURATION);
@@ -112,6 +114,103 @@ export class KodiakVoiceCallPeer {
     await this.peerConnection.addIceCandidate(candidate);
   }
 
+  async setCameraEnabled(isEnabled: boolean) {
+    return isEnabled ? await this.enableCamera() : await this.disableCamera();
+  }
+
+  hasCameraEnabled() {
+    return Boolean(this.localVideoTrack && this.localVideoTrack.readyState === 'live' && this.localVideoTrack.enabled);
+  }
+
+  private async enableCamera() {
+    if (this.hasCameraEnabled()) {
+      return null;
+    }
+
+    if (!isKodiakMicrophoneSecureContext()) {
+      throw new Error('Camera access requires HTTPS, localhost, or the installed Kodiak Connect app.');
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Camera access is not available in this browser or app container.');
+    }
+
+    let cameraStream: MediaStream;
+
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: 'user',
+          height: { ideal: 720 },
+          width: { ideal: 1280 },
+        },
+      });
+    } catch (error) {
+      throw new Error(getKodiakMediaErrorMessage(error, 'video'));
+    }
+
+    const [videoTrack] = cameraStream.getVideoTracks();
+
+    if (!videoTrack) {
+      throw new Error('No camera video track was returned.');
+    }
+
+    if (!this.localStream) {
+      this.localStream = new MediaStream();
+    }
+
+    this.localStream.addTrack(videoTrack);
+    this.localVideoTrack = videoTrack;
+    this.videoSender = this.peerConnection.addTrack(videoTrack, this.localStream);
+    this.options.onLocalStream?.(this.localStream);
+
+    const offer = await this.peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true,
+    });
+
+    await this.peerConnection.setLocalDescription(offer);
+
+    if (!offer.sdp) {
+      throw new Error('WebRTC camera offer did not include SDP.');
+    }
+
+    return offer.sdp;
+  }
+
+  private async disableCamera() {
+    if (!this.localVideoTrack && !this.videoSender) {
+      return null;
+    }
+
+    if (this.videoSender) {
+      this.peerConnection.removeTrack(this.videoSender);
+    }
+
+    if (this.localVideoTrack) {
+      this.localVideoTrack.stop();
+      this.localStream?.removeTrack(this.localVideoTrack);
+    }
+
+    this.videoSender = null;
+    this.localVideoTrack = null;
+    this.options.onLocalStream?.(this.localStream ?? new MediaStream());
+
+    const offer = await this.peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true,
+    });
+
+    await this.peerConnection.setLocalDescription(offer);
+
+    if (!offer.sdp) {
+      throw new Error('WebRTC camera-off offer did not include SDP.');
+    }
+
+    return offer.sdp;
+  }
+
   setMuted(isMuted: boolean) {
     for (const track of this.localStream?.getAudioTracks() ?? []) {
       track.enabled = !isMuted;
@@ -124,6 +223,8 @@ export class KodiakVoiceCallPeer {
     }
 
     this.localStream = null;
+    this.videoSender = null;
+    this.localVideoTrack = null;
     this.pendingIceCandidates.length = 0;
     this.peerConnection.close();
   }
@@ -162,7 +263,12 @@ export class KodiakVoiceCallPeer {
     }
 
     for (const track of this.localStream.getTracks()) {
-      this.peerConnection.addTrack(track, this.localStream);
+      const sender = this.peerConnection.addTrack(track, this.localStream);
+
+      if (track.kind === 'video') {
+        this.videoSender = sender;
+        this.localVideoTrack = track;
+      }
     }
 
     this.options.onLocalStream?.(this.localStream);

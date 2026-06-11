@@ -7,6 +7,7 @@
   | 'dismissed';
 
 const MICROPHONE_PERMISSION_STORAGE_KEY = 'KC_CALL_MICROPHONE_PERMISSION';
+const CAMERA_PERMISSION_STORAGE_KEY = 'KC_CALL_CAMERA_PERMISSION';
 
 export interface KodiakMicrophonePermissionState {
   checkedAt?: number;
@@ -118,6 +119,93 @@ export async function requestKodiakMicrophonePermission(): Promise<KodiakMicroph
     };
 
     saveKodiakMicrophonePermission(state);
+    return state;
+  }
+}
+
+
+export function readKodiakCameraPermission(): KodiakMicrophonePermissionState {
+  try {
+    const storedValue = window.localStorage.getItem(CAMERA_PERMISSION_STORAGE_KEY);
+
+    if (!storedValue) {
+      return { status: 'unknown' };
+    }
+
+    return JSON.parse(storedValue) as KodiakMicrophonePermissionState;
+  } catch {
+    return { status: 'unknown' };
+  }
+}
+
+export function saveKodiakCameraPermission(state: KodiakMicrophonePermissionState) {
+  window.localStorage.setItem(
+    CAMERA_PERMISSION_STORAGE_KEY,
+    JSON.stringify({
+      ...state,
+      checkedAt: Date.now(),
+    }),
+  );
+}
+
+export async function requestKodiakCameraPermission(): Promise<KodiakMicrophonePermissionState> {
+  if (!isKodiakMicrophoneSecureContext()) {
+    const state: KodiakMicrophonePermissionState = {
+      message: 'Camera access requires HTTPS, localhost, or the installed Kodiak Connect app.',
+      status: 'blocked',
+    };
+
+    saveKodiakCameraPermission(state);
+    return state;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const state: KodiakMicrophonePermissionState = {
+      message: 'Camera access is not available in this browser or app container.',
+      status: 'unavailable',
+    };
+
+    saveKodiakCameraPermission(state);
+    return state;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: 'user',
+        height: { ideal: 720 },
+        width: { ideal: 1280 },
+      },
+    });
+
+    for (const track of stream.getTracks()) {
+      track.stop();
+    }
+
+    const state: KodiakMicrophonePermissionState = {
+      message: 'Camera is ready for video calls.',
+      status: 'granted',
+    };
+
+    saveKodiakCameraPermission(state);
+    return state;
+  } catch (error) {
+    const errorName = error instanceof DOMException ? error.name : '';
+
+    const state: KodiakMicrophonePermissionState = {
+      message:
+        errorName === 'NotAllowedError'
+          ? 'Camera permission was denied. Enable it in site/app settings to use video calls.'
+          : errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError'
+            ? 'No usable camera was found. Plug in or enable a camera, then try again.'
+            : error instanceof Error
+              ? error.message
+              : 'Camera permission failed.',
+      status: errorName === 'NotAllowedError' ? 'denied' : 'unavailable',
+    };
+
+    saveKodiakCameraPermission(state);
     return state;
   }
 }
