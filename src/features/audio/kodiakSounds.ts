@@ -26,9 +26,47 @@ type KodiakAudioWindow = Window &
 
 const lastPlayedAtBySound = new Map<KodiakSoundName, number>();
 const htmlAudioPool = new Map<string, HTMLAudioElement>();
+const activeSoundStops = new Map<KodiakSoundName, Set<() => void>>();
 const decodedAudioBuffers = new Map<string, AudioBuffer>();
 
 let sharedAudioContext: AudioContext | null = null;
+
+function registerActiveSoundStop(soundName: KodiakSoundName, stop: () => void) {
+  const stops = activeSoundStops.get(soundName) ?? new Set<() => void>();
+  stops.add(stop);
+  activeSoundStops.set(soundName, stops);
+
+  return () => {
+    stops.delete(stop);
+
+    if (stops.size === 0) {
+      activeSoundStops.delete(soundName);
+    }
+  };
+}
+
+export function stopKodiakSound(soundName: KodiakSoundName) {
+  const stops = activeSoundStops.get(soundName);
+
+  if (!stops) {
+    return;
+  }
+
+  for (const stop of [...stops]) {
+    try {
+      stop();
+    } catch {
+      // Already stopped.
+    }
+  }
+
+  activeSoundStops.delete(soundName);
+}
+
+export function stopKodiakCallSounds() {
+  stopKodiakSound('ringingSendCall');
+  stopKodiakSound('ringingReceiveCall');
+}
 
 function getAudioContext() {
   if (sharedAudioContext) {
@@ -82,7 +120,7 @@ async function getDecodedAudioBuffer(path: string) {
   return decodedBuffer;
 }
 
-async function playWebAudioPath(path: string, volume: number) {
+async function playWebAudioPath(soundName: KodiakSoundName, path: string, volume: number) {
   const audioContext = getAudioContext();
 
   if (!audioContext) {
@@ -100,6 +138,29 @@ async function playWebAudioPath(path: string, volume: number) {
   source.connect(gain);
   gain.connect(audioContext.destination);
   source.start();
+
+  let removeStop: (() => void) | null = null;
+  const stopPlayback = () => {
+    try {
+      source.stop();
+    } catch {
+      // Already stopped.
+    }
+
+    try {
+      source.disconnect();
+      gain.disconnect();
+      removeStop?.();
+      removeStop = null;
+    } catch {
+      // Already disconnected.
+    }
+
+    removeStop?.();
+    removeStop = null;
+  };
+
+  removeStop = registerActiveSoundStop(soundName, stopPlayback);
 
   window.setTimeout(() => {
     try {
@@ -126,11 +187,30 @@ function getHtmlAudio(path: string) {
   return audio;
 }
 
-async function playHtmlAudioPath(path: string, volume: number) {
+async function playHtmlAudioPath(soundName: KodiakSoundName, path: string, volume: number) {
   const audio = getHtmlAudio(path);
   audio.pause();
   audio.currentTime = 0;
   audio.volume = Math.min(Math.max(volume, 0), 1);
+
+  let removeStop: (() => void) | null = null;
+  const stopPlayback = () => {
+    audio.pause();
+    audio.currentTime = 0;
+    removeStop?.();
+    removeStop = null;
+  };
+
+  removeStop = registerActiveSoundStop(soundName, stopPlayback);
+
+  audio.addEventListener(
+    'ended',
+    () => {
+      removeStop?.();
+      removeStop = null;
+    },
+    { once: true },
+  );
 
   await audio.play();
   return true;
@@ -175,7 +255,7 @@ export async function playKodiakSound(soundName: KodiakSoundName, volume = 0.65,
 
   for (const path of paths) {
     try {
-      const played = await playWebAudioPath(path, volume);
+      const played = await playWebAudioPath(soundName, path, volume);
 
       if (played) {
         return true;
@@ -187,7 +267,7 @@ export async function playKodiakSound(soundName: KodiakSoundName, volume = 0.65,
 
   for (const path of paths) {
     try {
-      await playHtmlAudioPath(path, volume);
+      await playHtmlAudioPath(soundName, path, volume);
       return true;
     } catch (error) {
       console.warn('[Kodiak Connect] HTML audio sound failed; trying next path', path, error);

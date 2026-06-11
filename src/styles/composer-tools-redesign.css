@@ -987,3 +987,14 @@ body:not(:has(.window-titlebar)) .message-composer-main-row .kodiak-attachment-b
   border-radius: 999px !important;
 }
 /* End centered SVG composer plus v9 */
+
+
+/* Kodiak call audio controls v1 */
+.kodiak-call-audio {
+  display: none !important;
+}
+
+.kodiak-call-panel__mute {
+  border-color: rgba(96, 165, 250, 0.42) !important;
+  color: #bfdbfe !important;
+}

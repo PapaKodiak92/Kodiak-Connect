@@ -9,6 +9,7 @@ import {
 } from '../features/auth/matrixLoginService';
 import { kodiakEnv } from '../config/env';
 import { MatrixMediaDomEnhancer } from '../features/attachments/MatrixMediaDomEnhancer';
+import { KodiakCallPermissionPrompt } from '../features/calls/KodiakCallPermissionPrompt';
 import { AndroidUpdatePanel } from '../features/updater/AndroidUpdatePanel';
 import { UpdaterPanel } from '../features/updater/UpdaterPanel';
 import { WorkspaceShell } from '../features/workspace/WorkspaceShell';
@@ -246,6 +247,7 @@ export function AppShell() {
         <WindowTitleBar platformKind={platform.kind} />
         <WorkspaceShell identity={matrixIdentity} onLogout={handleLogout} />
         <MatrixMediaDomEnhancer identity={matrixIdentity} />
+        <KodiakCallPermissionPrompt />
       </>
     );
   }

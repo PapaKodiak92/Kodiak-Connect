@@ -15,6 +15,8 @@ import './styles/layout-repair.css';
 import './styles/client-hotfix.css';
 import './styles/mobile-workspace-overhaul.css';
 import './styles/composer-tools-redesign.css';
+import './styles/call-permission-prompt.css';
+import './styles/call-panel-polish.css';
 import './styles/mobile-member-panel-slide.css';
 
 function clearStaleAvatarObjectUrls() {

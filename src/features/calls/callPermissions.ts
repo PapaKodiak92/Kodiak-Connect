@@ -1,0 +1,123 @@
+﻿export type KodiakMicrophonePermissionStatus =
+  | 'unknown'
+  | 'granted'
+  | 'denied'
+  | 'blocked'
+  | 'unavailable'
+  | 'dismissed';
+
+const MICROPHONE_PERMISSION_STORAGE_KEY = 'KC_CALL_MICROPHONE_PERMISSION';
+
+export interface KodiakMicrophonePermissionState {
+  checkedAt?: number;
+  message?: string;
+  status: KodiakMicrophonePermissionStatus;
+}
+
+function isLocalhostHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+}
+
+function getKodiakMicrophonePermissionMessage(error: unknown) {
+  const errorName = error instanceof DOMException ? error.name : '';
+
+  if (errorName === 'NotAllowedError') {
+    return 'Microphone permission was denied. Enable it in site/app settings to use voice calls.';
+  }
+
+  if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+    return 'No usable microphone was found. Check Windows Sound > Input, browser microphone settings, or plug in a mic.';
+  }
+
+  return error instanceof Error ? error.message : 'Microphone permission failed.';
+}
+
+export function isKodiakMicrophoneSecureContext() {
+  return window.isSecureContext || isLocalhostHost(window.location.hostname);
+}
+
+export function readKodiakMicrophonePermission(): KodiakMicrophonePermissionState {
+  try {
+    const storedValue = window.localStorage.getItem(MICROPHONE_PERMISSION_STORAGE_KEY);
+
+    if (!storedValue) {
+      return { status: 'unknown' };
+    }
+
+    return JSON.parse(storedValue) as KodiakMicrophonePermissionState;
+  } catch {
+    return { status: 'unknown' };
+  }
+}
+
+export function saveKodiakMicrophonePermission(state: KodiakMicrophonePermissionState) {
+  window.localStorage.setItem(
+    MICROPHONE_PERMISSION_STORAGE_KEY,
+    JSON.stringify({
+      ...state,
+      checkedAt: Date.now(),
+    }),
+  );
+}
+
+export function dismissKodiakMicrophonePermissionPrompt() {
+  saveKodiakMicrophonePermission({
+    message: 'Microphone setup skipped. You can enable it later before starting calls.',
+    status: 'dismissed',
+  });
+}
+
+export async function requestKodiakMicrophonePermission(): Promise<KodiakMicrophonePermissionState> {
+  if (!isKodiakMicrophoneSecureContext()) {
+    const state: KodiakMicrophonePermissionState = {
+      message: 'Microphone access requires HTTPS, localhost, or the installed Kodiak Connect app.',
+      status: 'blocked',
+    };
+
+    saveKodiakMicrophonePermission(state);
+    return state;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const state: KodiakMicrophonePermissionState = {
+      message: 'Microphone access is not available in this browser or app container.',
+      status: 'unavailable',
+    };
+
+    saveKodiakMicrophonePermission(state);
+    return state;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        autoGainControl: true,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+      video: false,
+    });
+
+    for (const track of stream.getTracks()) {
+      track.stop();
+    }
+
+    const state: KodiakMicrophonePermissionState = {
+      message: 'Microphone is ready for voice calls.',
+      status: 'granted',
+    };
+
+    saveKodiakMicrophonePermission(state);
+    return state;
+  } catch (error) {
+    const errorName = error instanceof DOMException ? error.name : '';
+
+    const state: KodiakMicrophonePermissionState = {
+      message: getKodiakMicrophonePermissionMessage(error),
+      status: errorName === 'NotAllowedError' ? 'denied' : 'unavailable',
+    };
+
+    saveKodiakMicrophonePermission(state);
+    return state;
+  }
+}

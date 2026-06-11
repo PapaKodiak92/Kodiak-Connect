@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
-import { playKodiakSound, unlockKodiakSounds } from '../audio/kodiakSounds';
+import { playKodiakSound, stopKodiakCallSounds, unlockKodiakSounds } from '../audio/kodiakSounds';
+import { KodiakVoiceCallPeer } from '../calls/kodiakWebRtcCall';
 import { KodiakAttachmentBridge } from '../attachments/KodiakAttachmentBridge';
 import { isKodiakDesktopNotificationAvailable, requestKodiakDesktopNotificationPermission, showKodiakDesktopNotification } from '../notifications/kodiakDesktopNotifications';
 import {
@@ -47,6 +48,8 @@ import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 type FriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
 
+const CALL_INVITE_MAX_AGE_MS = 45_000;
+
 interface MatrixChannelPanelProps {
   activeChannel: WorkspaceChannel;
   activeSpace: WorkspaceSpace;
@@ -87,6 +90,7 @@ interface ParsedReplyContext {
 
 interface KodiakCallSession {
   callId: string;
+  connectedAt?: number;
   callKind: MatrixCallKind;
   direction: 'incoming' | 'outgoing';
   displayName: string;
@@ -605,6 +609,8 @@ export function MatrixChannelPanel({
   const [isNotificationSoundEnabled, setIsNotificationSoundEnabled] = useState(() => window.localStorage.getItem('KC_NOTIFY_SOUND') !== 'false');
   const [activeCallSession, setActiveCallSession] = useState<KodiakCallSession | null>(null);
   const [callStatusText, setCallStatusText] = useState<string | null>(null);
+  const [isCallMuted, setIsCallMuted] = useState(false);
+  const [callDurationTick, setCallDurationTick] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -622,7 +628,13 @@ export function MatrixChannelPanel({
   const hasLoadedSoundBaselineRef = useRef(false);
   const latestSoundMessageTsRef = useRef(0);
   const activeCallSessionRef = useRef<KodiakCallSession | null>(null);
+  const kodiakVoiceCallPeerRef = useRef<KodiakVoiceCallPeer | null>(null);
+  const pendingCallOfferSdpRef = useRef<string | null>(null);
+  const remoteCallAudioRef = useRef<HTMLAudioElement | null>(null);
+  const localCallVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteCallVideoRef = useRef<HTMLVideoElement | null>(null);
   const handledCallEventIdsRef = useRef<Set<string>>(new Set());
+  const callEventStartupBaselineRef = useRef(Date.now());
   const restrictedUserIdSetRef = useRef<Set<string>>(new Set());
   const backendAvatarObjectUrlsRef = useRef<Record<string, { source: string; url: string }>>({});
 
@@ -1039,6 +1051,19 @@ export function MatrixChannelPanel({
         const currentCall = activeCallSessionRef.current;
 
         if (callEvent.status === 'invite') {
+          const isStaleInvite =
+            callEvent.createdAt < callEventStartupBaselineRef.current ||
+            Date.now() - callEvent.createdAt > CALL_INVITE_MAX_AGE_MS;
+
+          if (isStaleInvite) {
+            continue;
+          }
+
+          if (activeCallSessionRef.current?.callId === callEvent.callId) {
+            continue;
+          }
+          pendingCallOfferSdpRef.current = callEvent.sdp ?? null;
+
           const nextCall: KodiakCallSession = {
             callId: callEvent.callId,
             callKind: callEvent.callKind,
@@ -1070,13 +1095,20 @@ export function MatrixChannelPanel({
         }
 
         if (callEvent.status === 'accept') {
-          setActiveCallSession({ ...currentCall, status: 'connected' });
+          setActiveCallSession({ ...currentCall, connectedAt: currentCall.connectedAt ?? Date.now(), status: 'connected' });
+          stopKodiakCallSounds();
           setCallStatusText(callerDisplayName + ' accepted the call.');
           void playKodiakSound('notify', 0.55, { force: true });
           continue;
         }
 
+        if (callEvent.status === 'offer' || callEvent.status === 'answer' || callEvent.status === 'ice') {
+          void handleKodiakWebRtcCallEvent(callEvent, currentCall);
+          continue;
+        }
+
         if (callEvent.status === 'decline') {
+          cleanupKodiakVoiceCall();
           setActiveCallSession(null);
           setCallStatusText(callerDisplayName + ' declined the call.');
           void playKodiakSound('notify', 0.45, { force: true });
@@ -1084,6 +1116,7 @@ export function MatrixChannelPanel({
         }
 
         if (callEvent.status === 'end') {
+          cleanupKodiakVoiceCall();
           setActiveCallSession(null);
           setCallStatusText(callerDisplayName + ' ended the call.');
           void playKodiakSound('notify', 0.45, { force: true });
@@ -1153,6 +1186,20 @@ export function MatrixChannelPanel({
   useEffect(() => {
     activeCallSessionRef.current = activeCallSession;
   }, [activeCallSession]);
+
+  useEffect(() => {
+    if (activeCallSession?.status !== 'connected') {
+      return;
+    }
+
+    setCallDurationTick((value) => value + 1);
+
+    const timer = window.setInterval(() => {
+      setCallDurationTick((value) => value + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [activeCallSession?.callId, activeCallSession?.status]);
 
   useEffect(() => {
     applyKodiakThemeMode(themeMode);
@@ -1684,6 +1731,201 @@ export function MatrixChannelPanel({
     setOpenActionMenu(null);
   }
 
+  function attachKodiakLocalMediaStream(stream: MediaStream) {
+    const videoElement = localCallVideoRef.current;
+
+    if (!videoElement || stream.getVideoTracks().length === 0) {
+      return;
+    }
+
+    videoElement.srcObject = stream;
+    videoElement.muted = true;
+
+    void videoElement.play().catch((error) => {
+      console.warn('[Kodiak Connect] Failed to play local call video', error);
+    });
+  }
+
+  function attachKodiakRemoteMediaStream(stream: MediaStream) {
+    const videoElement = remoteCallVideoRef.current;
+
+    if (videoElement && stream.getVideoTracks().length > 0) {
+      videoElement.srcObject = stream;
+
+      void videoElement.play().catch((error) => {
+        console.warn('[Kodiak Connect] Failed to play remote call video', error);
+      });
+    }
+
+    attachKodiakRemoteAudioStream(stream);
+  }
+
+  function attachKodiakRemoteAudioStream(stream: MediaStream) {
+    const audioElement = remoteCallAudioRef.current;
+
+    if (!audioElement) {
+      return;
+    }
+
+    audioElement.srcObject = stream;
+    audioElement.muted = false;
+
+    void audioElement.play().catch((error) => {
+      console.warn('[Kodiak Connect] Failed to play remote call audio', error);
+    });
+  }
+
+  function cleanupKodiakVoiceCall() {
+    stopKodiakCallSounds();
+    kodiakVoiceCallPeerRef.current?.close();
+    kodiakVoiceCallPeerRef.current = null;
+    pendingCallOfferSdpRef.current = null;
+    setIsCallMuted(false);
+
+    if (remoteCallAudioRef.current) {
+      remoteCallAudioRef.current.srcObject = null;
+    }
+
+    if (localCallVideoRef.current) {
+      localCallVideoRef.current.srcObject = null;
+    }
+
+    if (remoteCallVideoRef.current) {
+      remoteCallVideoRef.current.srcObject = null;
+    }
+  }
+
+  function createKodiakVoiceCallPeer(session: KodiakCallSession) {
+    cleanupKodiakVoiceCall();
+
+    const peer = new KodiakVoiceCallPeer({
+      callKind: session.callKind,
+      onConnectionStateChange: (state) => {
+        if (state === 'connected') {
+          setActiveCallSession((current) => current?.callId === session.callId ? { ...current, connectedAt: current.connectedAt ?? Date.now(), status: 'connected' } : current);
+          stopKodiakCallSounds();
+          setCallStatusText('Voice call connected.');
+        }
+
+        if (state === 'failed' || state === 'disconnected') {
+          setCallStatusText('Voice call connection ' + state + '.');
+        }
+
+        if (state === 'closed') {
+          setCallStatusText('Voice call ended.');
+        }
+      },
+      onIceCandidate: (candidate) => {
+        const currentRoomId = roomId;
+
+        if (!currentRoomId) {
+          return;
+        }
+
+        void sendKodiakCallEvent(identity, currentRoomId, {
+          callId: session.callId,
+          callKind: session.callKind,
+          candidate,
+          status: 'ice',
+          targetUserId: session.targetUserId,
+        }).catch((error) => {
+          console.warn('[Kodiak Connect] Failed to send ICE candidate', error);
+        });
+      },
+      onLocalStream: attachKodiakLocalMediaStream,
+      onRemoteStream: attachKodiakRemoteMediaStream,
+    });
+
+    kodiakVoiceCallPeerRef.current = peer;
+
+    return peer;
+  }
+
+  function getRequiredCallRoomId() {
+    if (!roomId) {
+      throw new Error('A Matrix room is required for call signaling.');
+    }
+
+    return roomId;
+  }
+
+  async function prepareKodiakWebRtcOffer(session: KodiakCallSession) {
+    const peer = createKodiakVoiceCallPeer(session);
+    setCallStatusText('Starting microphone...');
+
+    const offerSdp = await peer.createOffer();
+
+    setCallStatusText('Calling ' + session.displayName + '...');
+
+    return offerSdp;
+  }
+
+  async function answerKodiakWebRtcOffer(session: KodiakCallSession, offerSdp: string) {
+    const peer = createKodiakVoiceCallPeer(session);
+    setCallStatusText('Starting microphone...');
+
+    const answerSdp = await peer.createAnswer(offerSdp);
+
+    await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
+      callId: session.callId,
+      callKind: session.callKind,
+      sdp: answerSdp,
+      status: 'answer',
+      targetUserId: session.targetUserId,
+    });
+
+    setActiveCallSession({ ...session, connectedAt: session.connectedAt ?? Date.now(), status: 'connected' });
+    stopKodiakCallSounds();
+          setCallStatusText('Voice call connected.');
+  }
+
+  async function handleKodiakWebRtcCallEvent(callEvent: MatrixCallEvent, currentCall: KodiakCallSession) {
+    try {
+      if (callEvent.status === 'offer' && callEvent.sdp) {
+        pendingCallOfferSdpRef.current = callEvent.sdp;
+
+        if (currentCall.direction === 'incoming' && currentCall.status === 'connected') {
+          await answerKodiakWebRtcOffer(currentCall, callEvent.sdp);
+        }
+
+        return;
+      }
+
+      if (callEvent.status === 'answer' && callEvent.sdp) {
+        await kodiakVoiceCallPeerRef.current?.applyAnswer(callEvent.sdp);
+        setActiveCallSession({ ...currentCall, connectedAt: currentCall.connectedAt ?? Date.now(), status: 'connected' });
+        stopKodiakCallSounds();
+          setCallStatusText('Voice call connected.');
+        return;
+      }
+
+      if (callEvent.status === 'ice' && callEvent.candidate) {
+        await kodiakVoiceCallPeerRef.current?.addIceCandidate(callEvent.candidate);
+      }
+    } catch (error) {
+      console.warn('[Kodiak Connect] Failed to process WebRTC call event', error);
+      setCallStatusText('Voice call connection failed.');
+    }
+  }
+
+  function toggleKodiakCallMute() {
+    setIsCallMuted((currentValue) => {
+      const nextValue = !currentValue;
+      kodiakVoiceCallPeerRef.current?.setMuted(nextValue);
+      return nextValue;
+    });
+  }
+
+  function formatKodiakCallDuration(startedAt: number, tick: number) {
+    void tick;
+
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = elapsedSeconds % 60;
+
+    return minutes + ':' + seconds.toString().padStart(2, '0');
+  }
+
   function getCallKindLabel(callKind: MatrixCallKind) {
     return callKind === 'video' ? 'video call' : 'voice call';
   }
@@ -1693,7 +1935,7 @@ export function MatrixChannelPanel({
       return;
     }
 
-    await sendKodiakCallEvent(identity, roomId, {
+    await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
       callId: session.callId,
       callKind: session.callKind,
       status,
@@ -1720,15 +1962,16 @@ export function MatrixChannelPanel({
       targetUserId: activeDmTargetUserId,
     };
 
-    setActiveCallSession(nextCall);
-    setCallStatusText('Calling ' + nextCall.displayName + '...');
-
     try {
+      const offerSdp = await prepareKodiakWebRtcOffer(nextCall);
+
+      setActiveCallSession(nextCall);
       void playKodiakSound('ringingSendCall', 0.68, { force: true });
 
-      await sendKodiakCallEvent(identity, roomId, {
+      await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
         callId,
         callKind,
+        sdp: offerSdp,
         status: 'invite',
         targetUserId: activeDmTargetUserId,
       });
@@ -1741,8 +1984,13 @@ export function MatrixChannelPanel({
       });
     } catch (error) {
       console.warn('[Kodiak Connect] Failed to start call', error);
+      cleanupKodiakVoiceCall();
       setActiveCallSession(null);
-      setCallStatusText('Call could not be started.');
+      setCallStatusText(
+        error instanceof Error
+          ? error.message
+          : 'Call could not be started.',
+      );
     }
   }
 
@@ -1757,10 +2005,19 @@ export function MatrixChannelPanel({
       await sendKodiakCallSignal(session, status);
 
       if (status === 'accept') {
-        setActiveCallSession({ ...session, status: 'connected' });
-        setCallStatusText('Call accepted. Audio stream wiring is next.');
+        stopKodiakCallSounds();
+        setActiveCallSession({ ...session, connectedAt: session.connectedAt ?? Date.now(), status: 'connected' });
+        stopKodiakCallSounds();
+        setCallStatusText('Call accepted. Connecting audio...');
+
+        if (pendingCallOfferSdpRef.current) {
+          await answerKodiakWebRtcOffer(session, pendingCallOfferSdpRef.current);
+        } else {
+          setCallStatusText('Waiting for call audio offer...');
+        }
         void playKodiakSound('notify', 0.55, { force: true });
       } else {
+        cleanupKodiakVoiceCall();
         setActiveCallSession(null);
         setCallStatusText('Call declined.');
         void playKodiakSound('notify', 0.45, { force: true });
@@ -1778,6 +2035,7 @@ export function MatrixChannelPanel({
       return;
     }
 
+    cleanupKodiakVoiceCall();
     setActiveCallSession(null);
     setCallStatusText('Call ended.');
 
@@ -2477,6 +2735,15 @@ export function MatrixChannelPanel({
             >
               Voice Call
             </button>
+            <button
+              type="button"
+              className="kodiak-call-button kodiak-call-button--video"
+              onClick={() => void startKodiakCall('video')}
+              disabled={!roomId || !activeDmTargetUserId || Boolean(activeCallSession)}
+              title={activeDmTargetUserId ? 'Start video call with ' + activeDmTargetDisplayName : 'Open a direct message to start a call'}
+            >
+              Video Call
+            </button>
           </div>
         ) : null}
         <button
@@ -2502,13 +2769,33 @@ export function MatrixChannelPanel({
         <div className={'kodiak-call-panel kodiak-call-panel--' + activeCallSession.direction}>
           <div>
             <strong>
-              {activeCallSession.direction === 'incoming'
-                ? 'Incoming ' + getCallKindLabel(activeCallSession.callKind)
-                : activeCallSession.status === 'connected'
-                  ? 'Active ' + getCallKindLabel(activeCallSession.callKind)
+              {activeCallSession.status === 'connected'
+                ? 'Active ' + getCallKindLabel(activeCallSession.callKind)
+                : activeCallSession.direction === 'incoming'
+                  ? 'Incoming ' + getCallKindLabel(activeCallSession.callKind)
                   : 'Outgoing ' + getCallKindLabel(activeCallSession.callKind)}
             </strong>
             <span>{activeCallSession.displayName}</span>
+            {activeCallSession.status === 'connected' ? (
+              <span className="kodiak-call-panel__duration">
+                {formatKodiakCallDuration(activeCallSession.connectedAt ?? activeCallSession.startedAt, callDurationTick)}
+              </span>
+            ) : null}
+          </div>
+          <audio ref={remoteCallAudioRef} className="kodiak-call-audio" autoPlay playsInline />
+          <div className={'kodiak-call-stage kodiak-call-stage--' + activeCallSession.callKind}>
+            {activeCallSession.callKind === 'video' ? (
+              <>
+                <video ref={remoteCallVideoRef} className="kodiak-call-stage__remote" autoPlay playsInline />
+                <video ref={localCallVideoRef} className="kodiak-call-stage__local" autoPlay muted playsInline />
+              </>
+            ) : (
+              <div className="kodiak-call-stage__voice">
+                <span className="kodiak-call-stage__pulse" aria-hidden="true" />
+                <strong>{activeCallSession.displayName}</strong>
+                <small>{activeCallSession.status === 'connected' ? 'Voice connected' : 'Connecting voice...'}</small>
+              </div>
+            )}
           </div>
           <div className="kodiak-call-panel__actions">
             {activeCallSession.direction === 'incoming' && activeCallSession.status === 'ringing' ? (
@@ -2520,6 +2807,11 @@ export function MatrixChannelPanel({
                   Decline
                 </button>
               </>
+            ) : null}
+            {activeCallSession.status === 'connected' ? (
+              <button type="button" className="kodiak-call-panel__mute" onClick={toggleKodiakCallMute}>
+                {isCallMuted ? 'Unmute' : 'Mute'}
+              </button>
             ) : null}
             <button type="button" className="kodiak-call-panel__end" onClick={() => void endKodiakCall()}>
               End

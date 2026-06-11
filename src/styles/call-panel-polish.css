@@ -1,0 +1,306 @@
+/* Kodiak voice call panel polish */
+
+.kodiak-call-panel,
+.kodiak-call-status {
+  width: min(760px, calc(100% - 2rem)) !important;
+  min-height: 0 !important;
+  margin: 0.75rem auto 0 !important;
+  border: 1px solid rgba(56, 189, 248, 0.26) !important;
+  border-radius: 20px !important;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(14, 165, 233, 0.18), transparent 10rem),
+    rgba(8, 13, 26, 0.94) !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38) !important;
+  color: #e0f2fe !important;
+  padding: 0.78rem 0.9rem !important;
+}
+
+.kodiak-call-panel {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.85rem !important;
+}
+
+.kodiak-call-panel > div:first-child {
+  display: grid !important;
+  gap: 0.14rem !important;
+  min-width: 0 !important;
+}
+
+.kodiak-call-panel strong {
+  color: #f8fafc !important;
+  font-size: 0.92rem !important;
+  line-height: 1.1 !important;
+}
+
+.kodiak-call-panel span {
+  color: #bae6fd !important;
+  font-size: 0.78rem !important;
+}
+
+.kodiak-call-panel__actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 0.45rem !important;
+  flex-wrap: wrap !important;
+}
+
+.kodiak-call-panel__actions button {
+  min-height: 2.15rem !important;
+  border-radius: 999px !important;
+  padding: 0.38rem 0.76rem !important;
+  font-size: 0.76rem !important;
+  font-weight: 900 !important;
+}
+
+.kodiak-call-panel__mute {
+  border: 1px solid rgba(96, 165, 250, 0.42) !important;
+  background: rgba(37, 99, 235, 0.16) !important;
+  color: #bfdbfe !important;
+}
+
+.kodiak-call-panel__end {
+  border: 1px solid rgba(248, 113, 113, 0.45) !important;
+  background: rgba(127, 29, 29, 0.38) !important;
+  color: #fecaca !important;
+}
+
+.kodiak-call-panel--incoming {
+  border-color: rgba(34, 197, 94, 0.3) !important;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(34, 197, 94, 0.14), transparent 10rem),
+    rgba(8, 13, 26, 0.94) !important;
+}
+
+.kodiak-call-panel--outgoing {
+  border-color: rgba(56, 189, 248, 0.26) !important;
+}
+
+.kodiak-call-status {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 2.4rem !important;
+  font-size: 0.86rem !important;
+  text-align: center !important;
+}
+
+@media (max-width: 820px) {
+  body:not(:has(.window-titlebar)) .kodiak-call-panel,
+  body:not(:has(.window-titlebar)) .kodiak-call-status {
+    width: calc(100% - 0.8rem) !important;
+    margin: 0.45rem auto 0 !important;
+    border-radius: 16px !important;
+    padding: 0.58rem 0.62rem !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-panel {
+    gap: 0.55rem !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-panel strong {
+    font-size: 0.78rem !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-panel span {
+    font-size: 0.68rem !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-panel__actions {
+    gap: 0.32rem !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-panel__actions button {
+    min-height: 1.86rem !important;
+    padding: 0.3rem 0.5rem !important;
+    font-size: 0.66rem !important;
+  }
+}
+
+
+/* Compact in-call bar v2 */
+
+.kodiak-call-panel {
+  width: min(620px, calc(100% - 2rem)) !important;
+  height: auto !important;
+  min-height: 3.65rem !important;
+  max-height: 4.4rem !important;
+  margin: 0.7rem auto 0 !important;
+  padding: 0.72rem 0.9rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.8rem !important;
+  overflow: hidden !important;
+}
+
+.kodiak-call-panel > div:first-child {
+  display: grid !important;
+  gap: 0.1rem !important;
+  min-width: 0 !important;
+}
+
+.kodiak-call-panel strong,
+.kodiak-call-panel span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.kodiak-call-panel__duration {
+  color: #67e8f9 !important;
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 900 !important;
+}
+
+.kodiak-call-panel__actions {
+  flex: 0 0 auto !important;
+}
+
+@media (max-width: 820px) {
+  body:not(:has(.window-titlebar)) .kodiak-call-panel {
+    width: calc(100% - 0.7rem) !important;
+    min-height: 3.25rem !important;
+    max-height: 3.75rem !important;
+    margin-top: 0.38rem !important;
+    padding: 0.5rem 0.55rem !important;
+  }
+}
+/* End compact in-call bar v2 */
+
+
+/* Video-ready call stage v3 */
+
+.kodiak-call-panel {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-rows: auto minmax(220px, 1fr) !important;
+  gap: 0.75rem !important;
+  width: min(760px, calc(100% - 2rem)) !important;
+  min-height: 300px !important;
+  max-height: 420px !important;
+  margin: 0.75rem auto 0 !important;
+  padding: 0.85rem !important;
+  border-radius: 22px !important;
+  overflow: hidden !important;
+}
+
+.kodiak-call-panel > div:first-child {
+  display: grid !important;
+  gap: 0.08rem !important;
+  align-content: center !important;
+}
+
+.kodiak-call-panel__actions {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  align-self: start !important;
+  display: flex !important;
+  gap: 0.45rem !important;
+  justify-content: flex-end !important;
+}
+
+.kodiak-call-stage {
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  position: relative !important;
+  display: grid !important;
+  place-items: center !important;
+  min-height: 220px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(56, 189, 248, 0.18) !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at center, rgba(14, 165, 233, 0.12), transparent 12rem),
+    rgba(2, 6, 23, 0.55) !important;
+}
+
+.kodiak-call-stage--voice {
+  min-height: 240px !important;
+}
+
+.kodiak-call-stage__voice {
+  display: grid !important;
+  place-items: center !important;
+  gap: 0.5rem !important;
+  color: #e0f2fe !important;
+  text-align: center !important;
+}
+
+.kodiak-call-stage__voice strong {
+  font-size: 1.15rem !important;
+}
+
+.kodiak-call-stage__voice small {
+  color: #93c5fd !important;
+  font-weight: 800 !important;
+}
+
+.kodiak-call-stage__pulse {
+  width: 4.4rem !important;
+  height: 4.4rem !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(56, 189, 248, 0.42) !important;
+  background:
+    radial-gradient(circle, rgba(56, 189, 248, 0.28), transparent 62%),
+    rgba(15, 23, 42, 0.75) !important;
+  box-shadow: 0 0 34px rgba(56, 189, 248, 0.22) !important;
+}
+
+.kodiak-call-stage__remote {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 220px !important;
+  object-fit: cover !important;
+  background: #020617 !important;
+}
+
+.kodiak-call-stage__local {
+  position: absolute !important;
+  right: 0.75rem !important;
+  bottom: 0.75rem !important;
+  width: min(150px, 28%) !important;
+  aspect-ratio: 16 / 10 !important;
+  border: 1px solid rgba(251, 146, 60, 0.45) !important;
+  border-radius: 14px !important;
+  background: #020617 !important;
+  object-fit: cover !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45) !important;
+}
+
+.kodiak-call-button--video {
+  border-color: rgba(34, 197, 94, 0.38) !important;
+  background: rgba(22, 101, 52, 0.16) !important;
+}
+
+@media (max-width: 820px) {
+  body:not(:has(.window-titlebar)) .kodiak-call-panel {
+    width: calc(100% - 0.7rem) !important;
+    min-height: 260px !important;
+    max-height: 340px !important;
+    grid-template-rows: auto minmax(170px, 1fr) !important;
+    padding: 0.58rem !important;
+    border-radius: 18px !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-stage {
+    min-height: 170px !important;
+    border-radius: 15px !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-stage__remote {
+    min-height: 170px !important;
+  }
+
+  body:not(:has(.window-titlebar)) .kodiak-call-stage__local {
+    right: 0.5rem !important;
+    bottom: 0.5rem !important;
+    width: min(110px, 34%) !important;
+    border-radius: 11px !important;
+  }
+}
+/* End video-ready call stage v3 */

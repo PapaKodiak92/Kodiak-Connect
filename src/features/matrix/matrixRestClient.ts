@@ -26,14 +26,16 @@ export interface MatrixTextMessage {
 }
 
 export type MatrixCallKind = 'voice' | 'video';
-export type MatrixCallStatus = 'invite' | 'accept' | 'decline' | 'end';
+export type MatrixCallStatus = 'invite' | 'accept' | 'decline' | 'end' | 'offer' | 'answer' | 'ice';
 
 export interface MatrixCallEvent {
   callId: string;
   callKind: MatrixCallKind;
+  candidate?: RTCIceCandidateInit;
   createdAt: number;
   eventId: string;
   sender: string;
+  sdp?: string;
   status: MatrixCallStatus;
   targetUserId: string;
 }
@@ -760,7 +762,14 @@ export async function loadRecentProfileBios(identity: MatrixLoginIdentity, roomI
 export async function sendKodiakCallEvent(
   identity: MatrixLoginIdentity,
   roomId: string,
-  call: { callId: string; callKind: MatrixCallKind; status: MatrixCallStatus; targetUserId: string },
+  call: {
+    callId: string;
+    callKind: MatrixCallKind;
+    candidate?: RTCIceCandidateInit;
+    sdp?: string;
+    status: MatrixCallStatus;
+    targetUserId: string;
+  },
 ) {
   const txnId = Date.now() + '-' + Math.random().toString(36).slice(2);
 
@@ -772,7 +781,9 @@ export async function sendKodiakCallEvent(
       body: JSON.stringify({
         call_id: call.callId,
         call_kind: call.callKind,
+        candidate: call.candidate,
         created_at: Date.now(),
+        sdp: call.sdp,
         status: call.status,
         target_user_id: call.targetUserId,
       }),
@@ -793,6 +804,8 @@ export async function loadRecentKodiakCallEvents(identity: MatrixLoginIdentity, 
             call_id?: string;
             call_kind?: MatrixCallKind;
             status?: MatrixCallStatus;
+            candidate?: RTCIceCandidateInit;
+            sdp?: string;
             target_user_id?: string;
           })
         | undefined;
@@ -805,7 +818,7 @@ export async function loadRecentKodiakCallEvents(identity: MatrixLoginIdentity, 
         Boolean(content?.call_id) &&
         Boolean(content?.target_user_id) &&
         (content?.call_kind === 'voice' || content?.call_kind === 'video') &&
-        (status === 'invite' || status === 'accept' || status === 'decline' || status === 'end')
+        (status === 'invite' || status === 'accept' || status === 'decline' || status === 'end' || status === 'offer' || status === 'answer' || status === 'ice')
       );
     })
     .map<MatrixCallEvent>((event) => {
@@ -814,6 +827,8 @@ export async function loadRecentKodiakCallEvents(identity: MatrixLoginIdentity, 
             call_id?: string;
             call_kind?: MatrixCallKind;
             status?: MatrixCallStatus;
+            candidate?: RTCIceCandidateInit;
+            sdp?: string;
             target_user_id?: string;
           })
         | undefined;
@@ -821,9 +836,11 @@ export async function loadRecentKodiakCallEvents(identity: MatrixLoginIdentity, 
       return {
         callId: content?.call_id ?? '',
         callKind: content?.call_kind === 'video' ? 'video' : 'voice',
+        candidate: content?.candidate,
         createdAt: content?.created_at ?? event.origin_server_ts ?? 0,
         eventId: event.event_id ?? '',
         sender: event.sender ?? '',
+        sdp: content?.sdp,
         status: content?.status ?? 'invite',
         targetUserId: content?.target_user_id ?? '',
       };
