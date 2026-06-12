@@ -45,11 +45,19 @@
     "linux": {
       "deb": {
         "depends": [
+          "gstreamer1.0-alsa",
           "gstreamer1.0-libav",
+          "gstreamer1.0-nice",
           "gstreamer1.0-pipewire",
+          "gstreamer1.0-plugins-bad",
           "gstreamer1.0-plugins-base",
           "gstreamer1.0-plugins-good",
-          "gstreamer1.0-pulseaudio"
+          "gstreamer1.0-plugins-ugly",
+          "gstreamer1.0-pulseaudio",
+          "pipewire",
+          "wireplumber",
+          "xdg-desktop-portal",
+          "xdg-desktop-portal-gtk"
         ]
       }
     }

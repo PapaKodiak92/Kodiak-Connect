@@ -639,6 +639,7 @@ export function MatrixChannelPanel({
   const pendingCallOfferSdpRef = useRef<string | null>(null);
   const remoteCallAudioRef = useRef<HTMLAudioElement | null>(null);
   const pendingRemoteCallStreamRef = useRef<MediaStream | null>(null);
+  const pendingLocalCallStreamRef = useRef<MediaStream | null>(null);
   const localCallVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteCallVideoRef = useRef<HTMLVideoElement | null>(null);
   const handledCallEventIdsRef = useRef<Set<string>>(new Set());
@@ -1105,7 +1106,6 @@ export function MatrixChannelPanel({
         if (callEvent.status === 'accept') {
           setActiveCallSession({ ...currentCall, connectedAt: currentCall.connectedAt ?? Date.now(), status: 'connected' });
           stopKodiakCallSounds();
-    stopKodiakSpeakingDetectors();
           setCallStatusText(callerDisplayName + ' accepted the call.');
           void playKodiakSound('notify', 0.55, { force: true });
           continue;
@@ -1841,21 +1841,44 @@ export function MatrixChannelPanel({
   }
 
   function attachKodiakLocalMediaStream(stream: MediaStream) {
+    pendingLocalCallStreamRef.current = stream;
     startKodiakSpeakingDetector(stream, 'self');
-    setIsCallCameraEnabled(stream.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled));
-    const videoElement = localCallVideoRef.current;
 
-    if (!videoElement || stream.getVideoTracks().length === 0) {
+    const hasLiveVideo = stream
+      .getVideoTracks()
+      .some((track) => track.readyState === 'live' && track.enabled);
+
+    setIsCallCameraEnabled(hasLiveVideo);
+    attachKodiakLocalVideoStream(stream);
+  }
+
+  function attachKodiakLocalVideoStream(stream: MediaStream) {
+    const videoElement = localCallVideoRef.current;
+    const hasVideoTrack = stream.getVideoTracks().some((track) => track.readyState === 'live');
+
+    if (!videoElement || !hasVideoTrack) {
       return;
     }
 
-    videoElement.srcObject = stream;
+    if (videoElement.srcObject !== stream) {
+      videoElement.srcObject = stream;
+    }
+
     videoElement.muted = true;
+    videoElement.playsInline = true;
 
     void videoElement.play().catch((error) => {
       console.warn('[Kodiak Connect] Failed to play local call video', error);
     });
   }
+
+  useEffect(() => {
+    if (!activeCallSession || !pendingLocalCallStreamRef.current) {
+      return;
+    }
+
+    attachKodiakLocalVideoStream(pendingLocalCallStreamRef.current);
+  }, [activeCallSession?.callId, isCallCameraEnabled]);
 
   function attachKodiakRemoteMediaStream(stream: MediaStream) {
     pendingRemoteCallStreamRef.current = stream;
@@ -1933,6 +1956,7 @@ export function MatrixChannelPanel({
     kodiakVoiceCallPeerRef.current = null;
     pendingCallOfferSdpRef.current = null;
     pendingRemoteCallStreamRef.current = null;
+    pendingLocalCallStreamRef.current = null;
     setIsCallMuted(false);
     setIsCallCameraEnabled(false);
     setHasRemoteCallVideo(false);
@@ -2239,21 +2263,6 @@ export function MatrixChannelPanel({
     const session = activeCallSessionRef.current;
 
     if (!session) {
-      return;
-    }
-
-    if (status === 'accept' && !isKodiakWebRtcSupported()) {
-      setCallStatusText('Voice calls are not supported in this browser or app container. Update Kodiak Connect or use Chrome, Edge, Firefox, or Safari.');
-
-      try {
-        await sendKodiakCallSignal(session, 'decline');
-      } catch (error) {
-        console.warn('[Kodiak Connect] Failed to decline unsupported call', error);
-      }
-
-      cleanupKodiakVoiceCall();
-      activeCallSessionRef.current = null;
-      setActiveCallSession(null);
       return;
     }
 
