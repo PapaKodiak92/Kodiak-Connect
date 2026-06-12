@@ -1,0 +1,60 @@
+﻿.message-composer-main-row textarea {
+  flex: 1;
+  min-height: 2.55rem;
+  max-height: 9rem;
+  resize: vertical;
+  border: 1px solid rgba(251, 146, 60, 0.22);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  padding: 0.78rem 1rem;
+  font: inherit;
+  line-height: 1.35;
+  outline: none;
+  scrollbar-width: thin;
+}
+
+.message-composer-main-row textarea:focus {
+  border-color: rgba(251, 146, 60, 0.7);
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.12);
+}
+
+.message-composer-main-row textarea:disabled {
+  opacity: 0.55;
+}
+
+.matrix-message,
+.matrix-message *,
+.matrix-message-bubble,
+.matrix-message-body,
+.matrix-message-text,
+.matrix-message-content,
+.matrix-message__body,
+.matrix-message__text,
+.matrix-event-body,
+.matrix-event-text,
+.chat-message-body,
+.chat-message-text {
+  overflow-wrap: anywhere;
+}
+
+.matrix-message-body,
+.matrix-message-text,
+.matrix-message-content,
+.matrix-message__body,
+.matrix-message__text,
+.matrix-event-body,
+.matrix-event-text,
+.chat-message-body,
+.chat-message-text {
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .message-composer-main-row textarea {
+    min-height: 2.45rem;
+    max-height: 7rem;
+    border-radius: 1.35rem;
+    padding: 0.72rem 0.85rem;
+  }
+}

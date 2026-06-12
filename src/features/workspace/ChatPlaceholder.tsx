@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+﻿import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import {
   addKodiakReportNote,
@@ -11,6 +11,7 @@ import {
   type KodiakReportAction,
   type KodiakReportStatus,
 } from '../backend/kodiakApiClient';
+import { MusicLoungePanel } from './MusicLoungePanel';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 interface ChatPlaceholderProps {
@@ -494,7 +495,9 @@ export function ChatPlaceholder({ activeChannel, activeSpace, identity }: ChatPl
       </header>
 
       <div className="chat-placeholder__body">
-        {activeChannel.id === 'safety-center' ? (
+        {activeChannel.id === 'music-lounge' ? (
+          <MusicLoungePanel identity={identity} />
+        ) : activeChannel.id === 'safety-center' ? (
           <SafetyCenterReports identity={identity} />
         ) : (
           <>
@@ -542,3 +545,4 @@ export function ChatPlaceholder({ activeChannel, activeSpace, identity }: ChatPl
     </section>
   );
 }
+

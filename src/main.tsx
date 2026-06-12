@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+﻿import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import './styles/global.css';
@@ -17,6 +17,8 @@ import './styles/mobile-workspace-overhaul.css';
 import './styles/composer-tools-redesign.css';
 import './styles/call-permission-prompt.css';
 import './styles/call-panel-polish.css';
+import './styles/music-lounge.css';
+import './styles/message-formatting.css';
 import './styles/mobile-member-panel-slide.css';
 
 function clearStaleAvatarObjectUrls() {
@@ -60,3 +62,5 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+

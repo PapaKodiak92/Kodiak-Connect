@@ -1,4 +1,4 @@
-import type { WorkspaceSpace } from './workspaceTypes';
+﻿import type { WorkspaceSpace } from './workspaceTypes';
 
 export const officialSpace: WorkspaceSpace = {
   id: 'official-space',
@@ -34,6 +34,12 @@ export const officialSpace: WorkspaceSpace = {
           kind: 'text',
           description: 'The first public community channel for Kodiak Connect.',
           matrixAlias: '#general:kodiak-connect.com',
+        },
+        {
+          id: 'music-lounge',
+          name: 'music-lounge',
+          kind: 'music',
+          description: 'A shared listening lounge for music, focus sessions, and community vibes.',
         },
       ],
     },
@@ -83,3 +89,4 @@ export const officialSpace: WorkspaceSpace = {
     },
   ],
 };
+
