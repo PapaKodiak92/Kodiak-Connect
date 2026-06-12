@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { createPortal } from 'react-dom';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import { playKodiakSound, stopKodiakCallSounds, unlockKodiakSounds } from '../audio/kodiakSounds';
-import { isKodiakWebRtcSupported, KodiakVoiceCallPeer } from '../calls/kodiakWebRtcCall';
+import { getKodiakWebRtcUnsupportedMessage, isKodiakWebRtcSupported, KodiakVoiceCallPeer } from '../calls/kodiakWebRtcCall';
 import { KodiakAttachmentBridge } from '../attachments/KodiakAttachmentBridge';
 import { isKodiakDesktopNotificationAvailable, requestKodiakDesktopNotificationPermission, showKodiakDesktopNotification } from '../notifications/kodiakDesktopNotifications';
 import {
@@ -2193,7 +2193,7 @@ export function MatrixChannelPanel({
     }
 
     if (!isKodiakWebRtcSupported()) {
-      setCallStatusText('Voice calls are not supported in this browser or app container. Update Kodiak Connect or use Chrome, Edge, Firefox, or Safari.');
+      setCallStatusText(getKodiakWebRtcUnsupportedMessage());
       return;
     }
 
@@ -2267,7 +2267,7 @@ export function MatrixChannelPanel({
     }
 
     if (status === 'accept' && !isKodiakWebRtcSupported()) {
-      setCallStatusText('Voice calls are not supported in this browser or app container. Update Kodiak Connect or use Chrome, Edge, Firefox, or Safari.');
+      setCallStatusText(getKodiakWebRtcUnsupportedMessage());
 
       try {
         await sendKodiakCallSignal(session, 'decline');

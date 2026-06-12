@@ -47,7 +47,7 @@ function getKodiakRtcPeerConnectionConstructor() {
 
   if (!rtcConstructor) {
     throw new Error(
-      'Voice calls are not supported in this browser or app container. Update Kodiak Connect or use Chrome, Edge, Firefox, or Safari.',
+      getKodiakWebRtcUnsupportedMessage(),
     );
   }
 
@@ -66,6 +66,36 @@ export function isKodiakWebRtcSupported() {
       rtcWindow.RTCPeerConnection ??
       rtcWindow.webkitRTCPeerConnection,
   );
+}
+
+export function getKodiakWebRtcDiagnostics() {
+  const rtcGlobal = globalThis as KodiakRtcGlobal & {
+    __TAURI__?: unknown;
+    __TAURI_INTERNALS__?: unknown;
+  };
+  const rtcWindow = window as typeof window & {
+    webkitRTCPeerConnection?: KodiakRtcPeerConnectionConstructor;
+    __TAURI__?: unknown;
+    __TAURI_INTERNALS__?: unknown;
+  };
+
+  return [
+    `protocol=${window.location.protocol}`,
+    `host=${window.location.hostname}`,
+    `secure=${String(window.isSecureContext)}`,
+    `global.RTCPeerConnection=${typeof rtcGlobal.RTCPeerConnection}`,
+    `global.webkitRTCPeerConnection=${typeof rtcGlobal.webkitRTCPeerConnection}`,
+    `window.RTCPeerConnection=${typeof rtcWindow.RTCPeerConnection}`,
+    `window.webkitRTCPeerConnection=${typeof rtcWindow.webkitRTCPeerConnection}`,
+    `mediaDevices=${typeof navigator.mediaDevices}`,
+    `getUserMedia=${typeof navigator.mediaDevices?.getUserMedia}`,
+    `tauri=${String(Boolean(rtcGlobal.__TAURI__ || rtcGlobal.__TAURI_INTERNALS__ || rtcWindow.__TAURI__ || rtcWindow.__TAURI_INTERNALS__))}`,
+    `ua=${navigator.userAgent}`,
+  ].join(' | ');
+}
+
+export function getKodiakWebRtcUnsupportedMessage() {
+  return 'Linux app WebRTC runtime is missing RTCPeerConnection. ' + getKodiakWebRtcDiagnostics();
 }
 
 function getKodiakRtcIceServers(): RTCIceServer[] {
