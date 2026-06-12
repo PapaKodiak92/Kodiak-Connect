@@ -5,54 +5,12 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 use tauri::{
-    ipc::CapabilityBuilder,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Url, WindowEvent,
+    AppHandle, Manager, WindowEvent,
 };
 
 static SHOULD_QUIT: AtomicBool = AtomicBool::new(false);
-
-#[cfg(target_os = "linux")]
-fn enable_linux_webrtc(window: &tauri::WebviewWindow) {
-    if let Err(error) = window.with_webview(|webview| {
-        use webkit2gtk::{SettingsExt, WebViewExt};
-
-        let Some(settings) = webview.inner().settings() else {
-            eprintln!("[Kodiak Connect] Linux WebKitGTK settings object was unavailable.");
-            return;
-        };
-
-        settings.set_enable_media(true);
-        settings.set_enable_media_stream(true);
-        settings.set_enable_webrtc(true);
-        settings.set_enable_mediasource(true);
-        settings.set_enable_webaudio(true);
-        settings.set_media_playback_requires_user_gesture(false);
-    }) {
-        eprintln!("[Kodiak Connect] failed to enable Linux WebKitGTK WebRTC settings: {error}");
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn use_linux_localhost_runtime(app: &mut tauri::App, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    let url: Url = format!("http://127.0.0.1:{port}")
-        .parse()
-        .expect("Kodiak Connect localhost URL must be valid.");
-
-    app.add_capability(
-        CapabilityBuilder::new("linux-localhost-runtime")
-            .remote(url.to_string())
-            .window("main"),
-    )?;
-
-    if let Some(window) = app.get_webview_window("main") {
-        enable_linux_webrtc(&window);
-        window.navigate(url)?;
-    }
-
-    Ok(())
-}
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct KodiakWindowPrefs {
@@ -133,11 +91,7 @@ fn set_start_minimized(app: AppHandle, enabled: bool) -> Result<bool, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
-    let linux_localhost_port = portpicker::pick_unused_port()
-        .expect("Kodiak Connect could not find an open localhost port.");
-
-    let mut builder = tauri::Builder::default()
+    tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -148,20 +102,8 @@ pub fn run() {
             write_downloaded_file,
             get_start_minimized,
             set_start_minimized
-        ]);
-
-    #[cfg(target_os = "linux")]
-    {
-        builder = builder.plugin(tauri_plugin_localhost::Builder::new(linux_localhost_port).build());
-    }
-
-    builder
-        .setup(move |app| {
-            #[cfg(target_os = "linux")]
-            {
-                use_linux_localhost_runtime(app, linux_localhost_port)?;
-            }
-
+        ])
+        .setup(|app| {
             let open_item = MenuItem::with_id(app, "open", "Open Kodiak Connect", true, None::<&str>)?;
             let start_minimized_item = MenuItem::with_id(
                 app,

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { createPortal } from 'react-dom';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import { playKodiakSound, stopKodiakCallSounds, unlockKodiakSounds } from '../audio/kodiakSounds';
-import { getKodiakWebRtcUnsupportedMessage, isKodiakWebRtcSupported, KodiakVoiceCallPeer } from '../calls/kodiakWebRtcCall';
+import { getKodiakWebRtcUnsupportedMessage, isKodiakWebRtcSupported } from '../calls/kodiakWebRtcCall';
+import { createKodiakCallPeer, shouldUseKodiakNativeLinuxRtcPeer, type KodiakCallPeer } from '../calls/kodiakCallPeer';
 import { KodiakAttachmentBridge } from '../attachments/KodiakAttachmentBridge';
 import { isKodiakDesktopNotificationAvailable, requestKodiakDesktopNotificationPermission, showKodiakDesktopNotification } from '../notifications/kodiakDesktopNotifications';
 import {
@@ -635,7 +636,7 @@ export function MatrixChannelPanel({
   const hasLoadedSoundBaselineRef = useRef(false);
   const latestSoundMessageTsRef = useRef(0);
   const activeCallSessionRef = useRef<KodiakCallSession | null>(null);
-  const kodiakVoiceCallPeerRef = useRef<KodiakVoiceCallPeer | null>(null);
+  const kodiakVoiceCallPeerRef = useRef<KodiakCallPeer | null>(null);
   const pendingCallOfferSdpRef = useRef<string | null>(null);
   const remoteCallAudioRef = useRef<HTMLAudioElement | null>(null);
   const pendingRemoteCallStreamRef = useRef<MediaStream | null>(null);
@@ -1977,7 +1978,7 @@ export function MatrixChannelPanel({
   function createKodiakVoiceCallPeer(session: KodiakCallSession) {
     cleanupKodiakVoiceCall();
 
-    const peer = new KodiakVoiceCallPeer({
+    const peer = createKodiakCallPeer({
       callKind: session.callKind,
       onConnectionStateChange: (state) => {
         if (state === 'connected') {
@@ -2192,7 +2193,7 @@ export function MatrixChannelPanel({
       return;
     }
 
-    if (!isKodiakWebRtcSupported()) {
+    if (!isKodiakWebRtcSupported() && !shouldUseKodiakNativeLinuxRtcPeer()) {
       setCallStatusText(getKodiakWebRtcUnsupportedMessage());
       return;
     }
@@ -2266,7 +2267,7 @@ export function MatrixChannelPanel({
       return;
     }
 
-    if (status === 'accept' && !isKodiakWebRtcSupported()) {
+    if (status === 'accept' && !isKodiakWebRtcSupported() && !shouldUseKodiakNativeLinuxRtcPeer()) {
       setCallStatusText(getKodiakWebRtcUnsupportedMessage());
 
       try {
