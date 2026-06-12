@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import { playKodiakSound, stopKodiakCallSounds, unlockKodiakSounds } from '../audio/kodiakSounds';
@@ -623,7 +623,7 @@ export function MatrixChannelPanel({
   const [isJumpToLatestVisible, setIsJumpToLatestVisible] = useState(false);
   const messageElementRefs = useRef<Record<string, HTMLElement | null>>({});
   const messageListRef = useRef<HTMLDivElement | null>(null);
-  const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const pollingTimer = useRef<number | null>(null);
   const typingPollTimer = useRef<number | null>(null);
@@ -1711,15 +1711,24 @@ export function MatrixChannelPanel({
     setDraftMessage((currentDraft) => applyMentionSuggestion(currentDraft, getActiveMentionSearch(currentDraft), suggestion));
   }
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     const firstVisibleMentionSuggestion = mentionSuggestions.find((suggestion) => !isUserRestricted(suggestion.userId));
 
-    if (event.key !== 'Tab' || !firstVisibleMentionSuggestion) {
+    if (event.key === 'Tab' && firstVisibleMentionSuggestion) {
+      event.preventDefault();
+      insertMentionSuggestion(firstVisibleMentionSuggestion);
       return;
     }
 
-    event.preventDefault();
-    insertMentionSuggestion(firstVisibleMentionSuggestion);
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+
+      if (!roomId || (isSending && Boolean(editingMessage)) || !canPost || !draftMessage.trim()) {
+        return;
+      }
+
+      event.currentTarget.form?.requestSubmit();
+    }
   }
 
   function getSafeMenuPosition(clientX: number, clientY: number) {
@@ -3135,7 +3144,7 @@ export function MatrixChannelPanel({
             onClick={scrollToLatestMessages}
             aria-label="Jump to latest message"
           >
-            <span aria-hidden="true">↓</span>
+            <span aria-hidden="true">â†“</span>
             <strong>Latest</strong>
           </button>
         ) : null}
@@ -3247,14 +3256,15 @@ export function MatrixChannelPanel({
 
         <div className="message-composer-main-row">
           <KodiakAttachmentBridge identity={identity} />
-          <input
-          ref={composerInputRef}
-          type="text"
-          placeholder={editingMessage ? 'Edit message' : getComposerPlaceholder(activeChannel, canPost, roomId, replyTarget)}
-          value={draftMessage}
-          onChange={(event) => setDraftMessage(event.target.value)}
-          onKeyDown={handleComposerKeyDown}
-          disabled={!roomId || (isSending && Boolean(editingMessage)) || !canPost}
+          <textarea
+            ref={composerInputRef}
+            placeholder={editingMessage ? 'Edit message' : getComposerPlaceholder(activeChannel, canPost, roomId, replyTarget)}
+            value={draftMessage}
+            onChange={(event) => setDraftMessage(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            disabled={!roomId || (isSending && Boolean(editingMessage)) || !canPost}
+            rows={1}
+            aria-label={editingMessage ? 'Edit message' : getComposerPlaceholder(activeChannel, canPost, roomId, replyTarget)}
           />
           <button type="submit" disabled={!roomId || (isSending && Boolean(editingMessage)) || !canPost || !draftMessage.trim()}>
           {isSending ? (editingMessage ? 'Saving...' : 'Sending...') : editingMessage ? 'Save' : activeChannel.readOnly ? 'Publish' : 'Send'}
@@ -4145,6 +4155,7 @@ export function MatrixChannelPanel({
     </section>
   );
 }
+
 
 
 

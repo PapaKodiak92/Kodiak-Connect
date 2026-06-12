@@ -1,4 +1,4 @@
-export type ChannelKind = 'announcement' | 'text' | 'safety' | 'family' | 'business' | 'dm';
+﻿export type ChannelKind = 'announcement' | 'text' | 'safety' | 'family' | 'business' | 'dm' | 'music';
 
 export interface WorkspaceChannel {
   id: string;
@@ -26,3 +26,4 @@ export interface WorkspaceSpace {
   iconSrc: string;
   sections: WorkspaceChannelSection[];
 }
+

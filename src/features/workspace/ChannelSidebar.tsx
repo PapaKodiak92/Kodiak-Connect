@@ -1,4 +1,4 @@
-import { useRef, useState, type MouseEvent, type TouchEvent } from 'react';
+﻿import { useRef, useState, type MouseEvent, type TouchEvent } from 'react';
 import type { WorkspaceChannel, WorkspaceSpace } from './workspaceTypes';
 
 export interface ChannelActivity {
@@ -23,6 +23,7 @@ interface ChannelSidebarProps {
 
 function getChannelPrefix(kind: WorkspaceChannel['kind']) {
   if (kind === 'announcement') return '!';
+  if (kind === 'music') return '♪';
   if (kind === 'safety') return 'S';
   if (kind === 'family') return 'F';
   if (kind === 'business') return 'B';
@@ -233,3 +234,4 @@ export function ChannelSidebar({
     </aside>
   );
 }
+
