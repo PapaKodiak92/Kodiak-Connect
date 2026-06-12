@@ -1,4 +1,4 @@
-import { isKodiakMicrophoneSecureContext } from './callPermissions';
+﻿import { isKodiakMicrophoneSecureContext } from './callPermissions';
 import type { MatrixCallKind } from '../matrix/matrixRestClient';
 
 export interface KodiakVoiceCallPeerOptions {
@@ -27,8 +27,30 @@ function getKodiakMediaErrorMessage(error: unknown, callKind: MatrixCallKind) {
   return error instanceof Error ? error.message : 'Media access failed.';
 }
 
+function getKodiakRtcIceServers(): RTCIceServer[] {
+  const iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+  const turnUrls = import.meta.env.VITE_KODIAK_TURN_URLS
+    ?.split(',')
+    .map((url: string) => url.trim())
+    .filter(Boolean);
+
+  const turnUsername = import.meta.env.VITE_KODIAK_TURN_USERNAME?.trim();
+  const turnCredential = import.meta.env.VITE_KODIAK_TURN_CREDENTIAL?.trim();
+
+  if (turnUrls?.length && turnUsername && turnCredential) {
+    iceServers.push({
+      urls: turnUrls,
+      username: turnUsername,
+      credential: turnCredential,
+    });
+  }
+
+  return iceServers;
+}
+
 const KODIAK_RTC_CONFIGURATION: RTCConfiguration = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  iceServers: getKodiakRtcIceServers(),
 };
 
 export class KodiakVoiceCallPeer {
@@ -284,3 +306,5 @@ export class KodiakVoiceCallPeer {
     }
   }
 }
+
+
