@@ -25,4 +25,6 @@ tauri-plugin-notification = "2.3.3"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
+tauri-plugin-localhost = "2"
+portpicker = "0.1"
 webkit2gtk = "2"
