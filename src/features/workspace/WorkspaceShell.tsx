@@ -821,6 +821,13 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
     markChannelSeen(activeChannel.id, activeChannelLatestTs);
   }, [activeChannel, activeChannelLatestTs, markChannelSeen]);
 
+  function collapseMobileWorkspaceDrawers() {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches) {
+      setIsChannelSidebarOpen(false);
+      setIsMemberPanelOpen(false);
+    }
+  }
+
   function handleSelectSpace(spaceId: string) {
     const nextSpace = spaces.find((space) => space.id === spaceId);
 
@@ -836,6 +843,13 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
     }
   }
 
+  function collapseSidePanelsForMobileContent() {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches) {
+      setIsChannelSidebarOpen(false);
+      setIsMemberPanelOpen(false);
+    }
+  }
+
   function handleSelectChannel(channel: WorkspaceChannel) {
     if (channel.disabled) {
       return;
@@ -848,6 +862,8 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
     }
 
     setActiveChannelId(channel.id);
+    collapseMobileWorkspaceDrawers();
+    collapseSidePanelsForMobileContent();
   }
 
   function handleCloseDirectMessage(channelId: string) {
@@ -887,6 +903,8 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
 
     setActiveSpaceId(officialSpace.id);
     setActiveChannelId(directMessageChannel.id);
+    collapseMobileWorkspaceDrawers();
+    collapseSidePanelsForMobileContent();
   }
 
   function handleStartDirectMessage(userId: string, displayName = getDisplayNameFromUserId(userId)) {
@@ -957,8 +975,14 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
         activeChannelId={activeChannel.id}
         channelActivity={channelActivity}
         onSelectChannel={handleSelectChannel}
-        onStartDirectMessage={() => setIsStartDmOpen(true)}
-        onOpenFriendCenter={() => setIsFriendCenterOpen(true)}
+        onStartDirectMessage={() => {
+          setIsStartDmOpen(true);
+          collapseSidePanelsForMobileContent();
+        }}
+        onOpenFriendCenter={() => {
+          setIsFriendCenterOpen(true);
+          collapseSidePanelsForMobileContent();
+        }}
         onCloseDirectMessage={handleCloseDirectMessage}
         friendCenterCount={incomingFriendRequestCount}
         onLogout={onLogout}
@@ -1052,6 +1076,8 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
     </main>
   );
 }
+
+
 
 
 

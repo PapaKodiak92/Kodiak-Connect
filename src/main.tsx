@@ -66,4 +66,5 @@ createRoot(document.getElementById('root')!).render(
 
 
 import './styles/collapsible-layout.css';
+import './styles/mobile-final-shell.css';
 
