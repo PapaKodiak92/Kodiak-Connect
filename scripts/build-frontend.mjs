@@ -38,11 +38,15 @@ function resolveBuildTarget(target) {
   return target;
 }
 
+function resolveBinCommand(command) {
+  return process.platform === 'win32' ? `${command}.cmd` : command;
+}
+
 function run(command, args, env) {
-  const result = spawnSync(command, args, {
+  const result = spawnSync(resolveBinCommand(command), args, {
     env,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: false,
   });
 
   if (result.error) {
