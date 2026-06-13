@@ -69,6 +69,43 @@ fn session_description_to_sdp(description: &gst_webrtc::WebRTCSessionDescription
 }
 
 #[cfg(target_os = "linux")]
+fn request_webrtc_sink_pad(webrtc: &gst::Element) -> Result<gst::Pad, String> {
+    if let Some(pad) = webrtc.request_pad_simple("sink_0") {
+        return Ok(pad);
+    }
+
+    if let Some(pad) = webrtc.request_pad_simple("sink_%u") {
+        return Ok(pad);
+    }
+
+    let templates = webrtc.pad_template_list();
+
+    for template in &templates {
+        if template.direction() == gst::PadDirection::Sink && template.presence() == gst::PadPresence::Request {
+            if let Some(pad) = webrtc.request_pad(template, None::<&str>, None::<&gst::Caps>) {
+                return Ok(pad);
+            }
+        }
+    }
+
+    let template_names = templates
+        .iter()
+        .map(|template| {
+            format!(
+                "{}:{:?}:{:?}",
+                template.name_template(),
+                template.direction(),
+                template.presence()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Err(format!(
+        "Linux native RTC could not request a WebRTC sink pad. Available pad templates: {template_names}"
+    ))
+}
+#[cfg(target_os = "linux")]
 fn wait_for_description(
     receiver: mpsc::Receiver<Result<gst_webrtc::WebRTCSessionDescription, String>>,
     label: &str,
