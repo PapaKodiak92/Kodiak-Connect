@@ -4,7 +4,8 @@ import {
   KodiakVoiceCallPeer,
   type KodiakVoiceCallPeerOptions,
 } from './kodiakWebRtcCall';
-import { KodiakNativeLinuxRtcCallPeer } from './kodiakNativeLinuxRtcCall';
+import { kodiakPlatform } from '../../platform/currentPlatform';
+import { KodiakNativeLinuxRtcCallPeer } from '../../platform/calls/kodiakNativeLinuxRtcCall';
 
 export interface KodiakCallPeer {
   createOffer(): Promise<string>;
@@ -17,33 +18,12 @@ export interface KodiakCallPeer {
   close(): void;
 }
 
-type KodiakRuntimeGlobal = typeof globalThis & {
-  __TAURI__?: unknown;
-  __TAURI_INTERNALS__?: unknown;
-  RTCPeerConnection?: typeof RTCPeerConnection;
-  webkitRTCPeerConnection?: typeof RTCPeerConnection;
-};
-
-function isLinuxTauriRuntime() {
-  const runtimeGlobal = globalThis as KodiakRuntimeGlobal;
-  const runtimeWindow = window as Window &
-    typeof globalThis & {
-      __TAURI__?: unknown;
-      __TAURI_INTERNALS__?: unknown;
-      webkitRTCPeerConnection?: typeof RTCPeerConnection;
-    };
-
-  return Boolean(
-    /Linux/i.test(navigator.userAgent) &&
-      (runtimeGlobal.__TAURI__ ||
-        runtimeGlobal.__TAURI_INTERNALS__ ||
-        runtimeWindow.__TAURI__ ||
-        runtimeWindow.__TAURI_INTERNALS__),
-  );
-}
-
 export function shouldUseKodiakNativeLinuxRtcPeer() {
-  return isLinuxTauriRuntime() && !isKodiakWebRtcSupported();
+  return (
+    kodiakPlatform.info.runtime === 'tauri-desktop' &&
+    kodiakPlatform.info.desktopOs === 'linux' &&
+    !isKodiakWebRtcSupported()
+  );
 }
 
 export function createKodiakCallPeer(options: KodiakVoiceCallPeerOptions): KodiakCallPeer {
