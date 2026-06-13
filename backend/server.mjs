@@ -17,6 +17,7 @@ const REPORTS_FILE = join(DATA_DIR, "reports.json");
 const PUSH_SUBSCRIPTIONS_FILE = join(DATA_DIR, "push-subscriptions.json");
 const ACTIVE_ROOMS_FILE = join(DATA_DIR, "active-rooms.json");
 const CALL_EVENTS_FILE = join(DATA_DIR, "call-events.json");
+const MUSIC_LOUNGE_FILE = join(DATA_DIR, "music-lounge.json");
 const ACTIVE_ROOM_VISIBLE_WINDOW_MS = 20_000;
 const CALL_EVENT_RETENTION_MS = 10 * 60_000;
 
@@ -172,6 +173,147 @@ function getPresenceState(lastSeenAt) {
   if (ageMs <= 90_000) return "idle";
   return "offline";
 }
+
+function sanitizeMusicVibeId(vibeId) {
+  const value = String(vibeId ?? "").trim().toLowerCase();
+
+  if (!/^[a-z0-9-]{2,64}$/.test(value)) {
+    return "";
+  }
+
+  return value;
+}
+
+function getDefaultMusicLoungeState() {
+  return {
+    selectedVibeId: "random-hits",
+    selectedByUserId: "",
+    selectedAt: 0,
+    votes: {},
+    updatedAt: 0,
+  };
+}
+
+function sanitizeMusicLoungeState(state) {
+  const fallback = getDefaultMusicLoungeState();
+
+  return {
+    ...fallback,
+    ...(state ?? {}),
+    selectedVibeId: sanitizeMusicVibeId(state?.selectedVibeId) || fallback.selectedVibeId,
+    selectedByUserId: isValidMatrixUserId(state?.selectedByUserId) ? state.selectedByUserId : "",
+    selectedAt: Number(state?.selectedAt || 0),
+    updatedAt: Number(state?.updatedAt || 0),
+    votes: typeof state?.votes === "object" && state.votes ? state.votes : {},
+  };
+}
+
+function getMusicVoteCounts(votes) {
+  return Object.values(votes ?? {}).reduce(
+    (counts, vote) => {
+      if (vote === "up") counts.up += 1;
+      if (vote === "down") counts.down += 1;
+      return counts;
+    },
+    { up: 0, down: 0 },
+  );
+}
+
+async function handleMusicLoungeState(request, response, corsHeaders, url) {
+  const userId = url.searchParams.get("userId") ?? getHeaderValue(request, "x-kodiak-user-id");
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  const state = sanitizeMusicLoungeState(await readJsonFile(MUSIC_LOUNGE_FILE, getDefaultMusicLoungeState()));
+
+  sendJson(response, 200, {
+    state: {
+      selectedVibeId: state.selectedVibeId,
+      selectedByUserId: state.selectedByUserId,
+      selectedAt: state.selectedAt,
+      updatedAt: state.updatedAt,
+      voteCounts: getMusicVoteCounts(state.votes),
+      myVote: state.votes[userId] ?? null,
+    },
+  }, corsHeaders);
+}
+
+async function handleMusicLoungeVibe(request, response, corsHeaders) {
+  const body = await readRequestBody(request);
+  const userId = getCurrentUserId(request, body);
+  const selectedVibeId = sanitizeMusicVibeId(body.selectedVibeId);
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  if (!selectedVibeId) {
+    sendJson(response, 400, { error: "Invalid music vibe." }, corsHeaders);
+    return;
+  }
+
+  const state = sanitizeMusicLoungeState(await readJsonFile(MUSIC_LOUNGE_FILE, getDefaultMusicLoungeState()));
+
+  state.selectedVibeId = selectedVibeId;
+  state.selectedByUserId = userId;
+  state.selectedAt = now();
+  state.updatedAt = now();
+  state.votes = {};
+
+  await writeJsonFile(MUSIC_LOUNGE_FILE, state);
+
+  sendJson(response, 200, {
+    ok: true,
+    state: {
+      selectedVibeId: state.selectedVibeId,
+      selectedByUserId: state.selectedByUserId,
+      selectedAt: state.selectedAt,
+      updatedAt: state.updatedAt,
+      voteCounts: getMusicVoteCounts(state.votes),
+      myVote: null,
+    },
+  }, corsHeaders);
+}
+
+async function handleMusicLoungeVote(request, response, corsHeaders) {
+  const body = await readRequestBody(request);
+  const userId = getCurrentUserId(request, body);
+  const vote = body.vote === "up" || body.vote === "down" ? body.vote : null;
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  const state = sanitizeMusicLoungeState(await readJsonFile(MUSIC_LOUNGE_FILE, getDefaultMusicLoungeState()));
+
+  if (vote) {
+    state.votes[userId] = vote;
+  } else {
+    delete state.votes[userId];
+  }
+
+  state.updatedAt = now();
+
+  await writeJsonFile(MUSIC_LOUNGE_FILE, state);
+
+  sendJson(response, 200, {
+    ok: true,
+    state: {
+      selectedVibeId: state.selectedVibeId,
+      selectedByUserId: state.selectedByUserId,
+      selectedAt: state.selectedAt,
+      updatedAt: state.updatedAt,
+      voteCounts: getMusicVoteCounts(state.votes),
+      myVote: state.votes[userId] ?? null,
+    },
+  }, corsHeaders);
+}
+
 
 function getFriendStatusForUser(edge, userId) {
   if (!edge) return "none";
@@ -1563,6 +1705,21 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/calls/media-token") {
       await handleCallMediaToken(request, response, corsHeaders);
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/music-lounge/state") {
+      await handleMusicLoungeState(request, response, corsHeaders, url);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/music-lounge/vibe") {
+      await handleMusicLoungeVibe(request, response, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/music-lounge/vote") {
+      await handleMusicLoungeVote(request, response, corsHeaders);
       return;
     }
 

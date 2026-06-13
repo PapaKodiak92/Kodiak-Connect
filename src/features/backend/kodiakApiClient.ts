@@ -8,6 +8,18 @@ export type KodiakReportActionType = 'reply' | 'note' | 'status' | 'archive' | '
 export type KodiakPushPlatform = 'android' | 'web' | 'tauri-desktop';
 export type KodiakPushProvider = 'fcm' | 'web-push' | 'local';
 
+export interface KodiakMusicLoungeState {
+  myVote: 'up' | 'down' | null;
+  selectedAt: number;
+  selectedByUserId: string;
+  selectedVibeId: string;
+  updatedAt: number;
+  voteCounts: {
+    down: number;
+    up: number;
+  };
+}
+
 export interface KodiakReportAction {
   actorUserId: string;
   body: string;
@@ -488,4 +500,40 @@ export async function deleteKodiakReport(identity: MatrixLoginIdentity, reportId
   });
 
   return true;
+}
+
+export async function loadKodiakMusicLoungeState(identity: MatrixLoginIdentity) {
+  const response = await fetch(
+    `${KODIAK_API_BASE_URL}/api/music-lounge/state?userId=${encodeURIComponent(identity.userId)}`,
+    {
+      headers: getHeaders(identity),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error('Kodiak music lounge state request failed.');
+  }
+
+  const data = (await response.json()) as { state?: KodiakMusicLoungeState };
+  return data.state ?? null;
+}
+
+export async function setKodiakMusicLoungeVibe(identity: MatrixLoginIdentity, selectedVibeId: string) {
+  const data = await postKodiak<{ state?: KodiakMusicLoungeState; ok?: boolean }>(
+    identity,
+    '/api/music-lounge/vibe',
+    { selectedVibeId },
+  );
+
+  return data.state ?? null;
+}
+
+export async function voteKodiakMusicLoungeVibe(identity: MatrixLoginIdentity, vote: 'up' | 'down' | null) {
+  const data = await postKodiak<{ state?: KodiakMusicLoungeState; ok?: boolean }>(
+    identity,
+    '/api/music-lounge/vote',
+    { vote },
+  );
+
+  return data.state ?? null;
 }
