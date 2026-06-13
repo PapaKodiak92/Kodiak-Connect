@@ -239,6 +239,28 @@ function getMatrixErrorMessage(error: unknown, activeChannel: WorkspaceChannel) 
   return 'Kodiak Connect could not reach the Matrix room.';
 }
 
+function getUnknownErrorMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message?: unknown }).message === 'string' &&
+    (error as { message: string }).message.trim()
+  ) {
+    return (error as { message: string }).message;
+  }
+
+  return fallbackMessage;
+}
+
 function canModerateMessages(userId: string) {
   return PLATFORM_MODERATOR_IDS.includes(userId);
 }
@@ -665,6 +687,7 @@ export function MatrixChannelPanel({
 
   const activeDmTargetUserId = activeChannel.kind === 'dm' ? getDirectMessageTargetUserId(activeChannel, identity.userId) : null;
   const activeDmTargetDisplayName = activeDmTargetUserId ? getKnownDisplayName(activeDmTargetUserId) : '';
+  const isNativeLinuxRtc = shouldUseKodiakNativeLinuxRtcPeer();
 
   const restrictedUserIdSet = useMemo(() => {
     return new Set([...blockedUserIds, ...blockedByUserIds, ...restrictedUserIds]);
@@ -2127,7 +2150,7 @@ export function MatrixChannelPanel({
       setCallStatusText(nextCameraEnabled ? 'Camera on.' : 'Camera off.');
     } catch (error) {
       setIsCallCameraEnabled(peer.hasCameraEnabled());
-      setCallStatusText(error instanceof Error ? error.message : 'Could not change camera state.');
+      setCallStatusText(getUnknownErrorMessage(error, 'Could not change camera state.'));
     }
   }
 
@@ -2193,8 +2216,13 @@ export function MatrixChannelPanel({
       return;
     }
 
-    if (!isKodiakWebRtcSupported() && !shouldUseKodiakNativeLinuxRtcPeer()) {
+    if (!isKodiakWebRtcSupported() && !isNativeLinuxRtc) {
       setCallStatusText(getKodiakWebRtcUnsupportedMessage());
+      return;
+    }
+
+    if (callKind === 'video' && isNativeLinuxRtc) {
+      setCallStatusText('Linux desktop native calling is voice-only right now. Use Voice Call.');
       return;
     }
 
@@ -2242,11 +2270,7 @@ export function MatrixChannelPanel({
       cleanupKodiakVoiceCall();
       activeCallSessionRef.current = null;
       setActiveCallSession(null);
-      setCallStatusText(
-        error instanceof Error
-          ? error.message
-          : 'Call could not be started.',
-      );
+      setCallStatusText(getUnknownErrorMessage(error, 'Call could not be started.'));
       return;
     }
 
@@ -3021,8 +3045,8 @@ export function MatrixChannelPanel({
               type="button"
               className="kodiak-call-button kodiak-call-button--video"
               onClick={() => void startKodiakCall('video')}
-              disabled={!roomId || !activeDmTargetUserId || Boolean(activeCallSession)}
-              title={activeDmTargetUserId ? 'Start video call with ' + activeDmTargetDisplayName : 'Open a direct message to start a call'}
+              disabled={!roomId || !activeDmTargetUserId || Boolean(activeCallSession) || isNativeLinuxRtc}
+              title={isNativeLinuxRtc ? 'Linux desktop native video is not wired yet. Use Voice Call.' : activeDmTargetUserId ? 'Start video call with ' + activeDmTargetDisplayName : 'Open a direct message to start a call'}
             >
               Video Call
             </button>
