@@ -39,7 +39,7 @@ export const officialSpace: WorkspaceSpace = {
           id: 'music-lounge',
           name: 'music-lounge',
           kind: 'music',
-          description: 'A shared listening lounge for music, focus sessions, and community vibes.',
+          description: 'A shared Kodiak-Music lounge for library picks, song requests, YouTube links, and community voting.',
         },
       ],
     },
@@ -89,4 +89,3 @@ export const officialSpace: WorkspaceSpace = {
     },
   ],
 };
-
