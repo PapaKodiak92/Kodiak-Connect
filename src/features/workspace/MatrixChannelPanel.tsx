@@ -12,12 +12,15 @@ import {
   loadKodiakReports,
   notifyKodiakDirectMessage,
   notifyKodiakCall,
+  loadKodiakBackendCallEvents,
+  sendKodiakBackendCallEvent,
   sendKodiakRoomActivity,
   submitKodiakReport,
   saveKodiakProfile,
   sendKodiakPresenceHeartbeat,
   type KodiakPresenceState,
   type KodiakReport,
+  type KodiakBackendCallEvent,
   type KodiakReportCategory,
 } from '../backend/kodiakApiClient';
 import {
@@ -28,7 +31,6 @@ import {
   joinRoomByAlias,
   joinRoomById,
   loadRecentMessages,
-  loadRecentKodiakCallEvents,
   loadRoomMembers,
   loadTypingUsers,
   MatrixRestError,
@@ -38,7 +40,6 @@ import {
   sendReaction,
   sendReplacementMessage,
   sendTextMessage,
-  sendKodiakCallEvent,
   sendTypingState,
   uploadProfileAvatar,
   type MatrixCallEvent,
@@ -207,6 +208,19 @@ function normalizeDisplayName(displayName: string) {
 function getDisplayName(userId: string) {
   const withoutPrefix = userId.startsWith('@') ? userId.slice(1) : userId;
   return withoutPrefix.split(':')[0] || userId;
+}
+function mapBackendCallEventToMatrixCallEvent(event: KodiakBackendCallEvent): MatrixCallEvent {
+  return {
+    callId: event.callId,
+    callKind: event.callKind,
+    candidate: event.candidate ?? undefined,
+    createdAt: event.createdAt,
+    eventId: event.eventId,
+    sender: event.senderUserId,
+    sdp: event.sdp,
+    status: event.status,
+    targetUserId: event.targetUserId,
+  };
 }
 
 function getUserLocalpart(userId: string) {
@@ -668,6 +682,7 @@ export function MatrixChannelPanel({
   const remoteCallVideoRef = useRef<HTMLVideoElement | null>(null);
   const handledCallEventIdsRef = useRef<Set<string>>(new Set());
   const callEventStartupBaselineRef = useRef(Date.now());
+  const backendCallEventSinceRef = useRef(Date.now());
   const restrictedUserIdSetRef = useRef<Set<string>>(new Set());
   const backendAvatarObjectUrlsRef = useRef<Record<string, { source: string; url: string }>>({});
 
@@ -1166,12 +1181,6 @@ export function MatrixChannelPanel({
     async (targetRoomId: string) => {
       const recentMessages = await loadRecentMessages(identity, targetRoomId);
 
-      const recentCallEvents = await loadRecentKodiakCallEvents(identity, targetRoomId, 40).catch((error) => {
-        console.warn('[Kodiak Connect] Failed to refresh call events', error);
-        return [];
-      });
-
-      processRecentCallEvents(recentCallEvents);
 
       const latestMessageTs = recentMessages.reduce((latestTs, message) => Math.max(latestTs, message.originServerTs), 0);
 
@@ -1200,9 +1209,37 @@ export function MatrixChannelPanel({
         console.warn('[Kodiak Connect] Failed to refresh profile bios', error);
       });
     },
-    [activeChannel.kind, areMessageSoundsEnabled, identity, isReceivedSoundEnabled, processRecentCallEvents, refreshProfileBios],
+    [areMessageSoundsEnabled, identity, isReceivedSoundEnabled, refreshProfileBios],
   );
 
+  useEffect(() => {
+    let isActive = true;
+
+    async function refreshBackendCallEvents() {
+      const result = await loadKodiakBackendCallEvents(identity, backendCallEventSinceRef.current).catch((error) => {
+        console.warn('[Kodiak Connect] Failed to refresh backend call events', error);
+        return null;
+      });
+
+      if (!isActive || !result) {
+        return;
+      }
+
+      backendCallEventSinceRef.current = Math.max(backendCallEventSinceRef.current, result.nextSince);
+      processRecentCallEvents(result.events.map(mapBackendCallEventToMatrixCallEvent));
+    }
+
+    void refreshBackendCallEvents();
+
+    const callEventIntervalId = window.setInterval(() => {
+      void refreshBackendCallEvents();
+    }, 2000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(callEventIntervalId);
+    };
+  }, [identity, processRecentCallEvents]);
   const stopTyping = useCallback(async () => {
     if (!roomId || !isTypingSentRef.current) {
       return;
@@ -2030,10 +2067,11 @@ export function MatrixChannelPanel({
           return;
         }
 
-        void sendKodiakCallEvent(identity, currentRoomId, {
+        void sendKodiakBackendCallEvent(identity, {
           callId: session.callId,
           callKind: session.callKind,
           candidate,
+          roomId: currentRoomId,
           status: 'ice',
           targetUserId: session.targetUserId,
         }).catch((error) => {
@@ -2050,11 +2088,7 @@ export function MatrixChannelPanel({
   }
 
   function getRequiredCallRoomId() {
-    if (!roomId) {
-      throw new Error('A Matrix room is required for call signaling.');
-    }
-
-    return roomId;
+    return roomId ?? '';
   }
 
   async function prepareKodiakWebRtcOffer(session: KodiakCallSession) {
@@ -2074,9 +2108,10 @@ export function MatrixChannelPanel({
 
     const answerSdp = await peer.createAnswer(offerSdp);
 
-    await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
+    await sendKodiakBackendCallEvent(identity, {
       callId: session.callId,
       callKind: session.callKind,
+      roomId: roomId ?? '',
       sdp: answerSdp,
       status: 'answer',
       targetUserId: session.targetUserId,
@@ -2137,9 +2172,10 @@ export function MatrixChannelPanel({
       setIsCallCameraEnabled(peer.hasCameraEnabled());
 
       if (offerSdp) {
-        await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
+        await sendKodiakBackendCallEvent(identity, {
           callId: session.callId,
           callKind: session.callKind,
+          roomId: roomId ?? '',
           sdp: offerSdp,
           status: 'offer',
           targetUserId: session.targetUserId,
@@ -2197,13 +2233,10 @@ export function MatrixChannelPanel({
   }
 
   async function sendKodiakCallSignal(session: KodiakCallSession, status: 'accept' | 'decline' | 'end') {
-    if (!roomId) {
-      return;
-    }
-
-    await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
+    await sendKodiakBackendCallEvent(identity, {
       callId: session.callId,
       callKind: session.callKind,
+      roomId: roomId ?? '',
       status,
       targetUserId: session.targetUserId,
     });
@@ -2214,7 +2247,7 @@ export function MatrixChannelPanel({
     targetUserId = activeDmTargetUserId,
     targetDisplayName = targetUserId ? getKnownDisplayName(targetUserId) : '',
   ) {
-    if (!roomId || !targetUserId) {
+    if (!targetUserId) {
       setCallStatusText('Select a friend before starting a call.');
       return;
     }
@@ -2269,9 +2302,10 @@ export function MatrixChannelPanel({
 
       void playKodiakSound('ringingSendCall', 0.68, { force: true });
 
-      await sendKodiakCallEvent(identity, getRequiredCallRoomId(), {
+      await sendKodiakBackendCallEvent(identity, {
         callId,
         callKind,
+        roomId: roomId ?? '',
         sdp: offerSdp,
         status: 'invite',
         targetUserId,
@@ -2290,7 +2324,7 @@ export function MatrixChannelPanel({
     void notifyKodiakCall(identity, {
       callId,
       callKind,
-      roomId,
+      roomId: roomId ?? '',
       targetUserId,
     }).catch((error) => {
       console.warn('[Kodiak Connect] Failed to send call push notification', error);

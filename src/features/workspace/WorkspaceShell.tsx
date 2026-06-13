@@ -17,7 +17,6 @@ import {
   joinRoomByAlias,
   loadProfileDisplayName,
   loadRecentMessages,
-  loadRecentKodiakCallEvents,
   resolveDirectMessageRoom,
   saveDirectMessageRoom,
 } from '../matrix/matrixRestClient';
@@ -48,8 +47,6 @@ const spaces: WorkspaceSpace[] = [officialSpace];
 
 type FriendStatus = 'none' | 'incoming' | 'outgoing' | 'friends';
 type FriendStatusByUserId = Record<string, FriendStatus>;
-
-const GLOBAL_CALL_INVITE_MAX_AGE_MS = 45_000;
 
 type DirectMessageSearchUser = {
   avatarUrl?: string;
@@ -279,8 +276,6 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
   const friendStatusByUserIdRef = useRef<FriendStatusByUserId>({});
   const [channelActivity, setChannelActivity] = useState<ChannelActivityById>({});
   const [lastSeenByChannel, setLastSeenByChannel] = useState<Record<string, number>>(() => readLastSeenByChannel(identity.userId));
-  const globalIncomingCallIdsRef = useRef<Set<string>>(new Set());
-  const globalCallStartupBaselineRef = useRef(Date.now());
   const [hasAcknowledgedOfficialSpace, setHasAcknowledgedOfficialSpace] = useState(() =>
     hasCurrentOfficialSpaceAcknowledgement(identity.userId),
   );
@@ -625,50 +620,6 @@ export function WorkspaceShell({ identity, onLogout }: WorkspaceShellProps) {
             roomId = await joinRoomByAlias(identity, channel.matrixAlias ?? '');
           }
 
-          const recentCallEvents = await loadRecentKodiakCallEvents(identity, roomId, 30);
-          const latestIncomingCallInvite = [...recentCallEvents]
-            .reverse()
-            .find((callEvent) => {
-              if (callEvent.status !== 'invite') {
-                return false;
-              }
-
-              if (callEvent.sender === identity.userId || callEvent.targetUserId !== identity.userId) {
-                return false;
-              }
-
-              if (globalIncomingCallIdsRef.current.has(callEvent.callId)) {
-                return false;
-              }
-
-              if (callEvent.createdAt < globalCallStartupBaselineRef.current) {
-                return false;
-              }
-
-              if (Date.now() - callEvent.createdAt > GLOBAL_CALL_INVITE_MAX_AGE_MS) {
-                return false;
-              }
-
-              return true;
-            });
-
-          if (latestIncomingCallInvite) {
-            globalIncomingCallIdsRef.current.add(latestIncomingCallInvite.callId);
-
-            return [
-              channel.id,
-              currentActivity[channel.id] ?? { hasMention: false, latestTs: 0, unreadCount: 0 },
-              {
-                body:
-                  (latestIncomingCallInvite.callKind === 'video' ? 'Incoming video call from ' : 'Incoming voice call from ') +
-                  getChannelDisplayTitle(channel).replace(/^DM\s+/, ''),
-                callId: latestIncomingCallInvite.callId,
-                channel,
-                isCall: true,
-                latestTs: latestIncomingCallInvite.createdAt,
-              },
-            ] as const;
-          }
 
           const recentMessages = await loadRecentMessages(identity, roomId, 25);
           const latestMessage = recentMessages.at(-1);
