@@ -1,3 +1,5 @@
+import { kodiakPlatform } from '../currentPlatform';
+
 type TauriNotificationModule = typeof import('@tauri-apps/plugin-notification');
 
 interface KodiakDesktopNotificationOptions {
@@ -8,7 +10,7 @@ interface KodiakDesktopNotificationOptions {
 }
 
 function isTauriRuntime() {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  return kodiakPlatform.info.runtime === 'tauri-desktop';
 }
 
 async function loadTauriNotifications(): Promise<TauriNotificationModule | null> {

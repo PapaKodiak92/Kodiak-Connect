@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import {
   acceptKodiakFriendRequest,
@@ -28,7 +28,7 @@ import {
 } from '../policy/policyAcknowledgementStorage';
 import { playKodiakSound } from '../audio/kodiakSounds';
 import { initializeKodiakPushNotifications } from '../notifications/notificationClient';
-import { showKodiakDesktopNotification } from '../notifications/kodiakDesktopNotifications';
+import { showKodiakDesktopNotification } from '../../platform/notifications/desktopNotifications';
 import { ChannelSidebar, type ChannelActivityById } from './ChannelSidebar';
 import { ChatPlaceholder } from './ChatPlaceholder';
 import { MatrixChannelPanel } from './MatrixChannelPanel';
