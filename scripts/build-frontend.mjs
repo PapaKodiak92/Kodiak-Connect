@@ -1,6 +1,9 @@
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const requestedTarget = process.argv[2] ?? 'web';
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function resolveDesktopTarget() {
   switch (process.platform) {
@@ -38,12 +41,10 @@ function resolveBuildTarget(target) {
   return target;
 }
 
-function resolveBinCommand(command) {
-  return process.platform === 'win32' ? `${command}.cmd` : command;
-}
-
-function run(command, args, env) {
-  const result = spawnSync(resolveBinCommand(command), args, {
+function runNodeTool(relativeToolPath, args, env) {
+  const toolPath = path.join(repoRoot, ...relativeToolPath);
+  const result = spawnSync(process.execPath, [toolPath, ...args], {
+    cwd: repoRoot,
     env,
     stdio: 'inherit',
     shell: false,
@@ -66,5 +67,5 @@ const env = {
 };
 
 console.log(`[Kodiak Connect] Building frontend target: ${buildTarget}`);
-run('tsc', ['-b'], env);
-run('vite', ['build'], env);
+runNodeTool(['node_modules', 'typescript', 'bin', 'tsc'], ['-b'], env);
+runNodeTool(['node_modules', 'vite', 'bin', 'vite.js'], ['build'], env);
