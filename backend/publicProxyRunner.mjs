@@ -10,7 +10,8 @@ const publicPort = Number(process.env.PORT || (service === 'auth' ? process.env.
 const internalPort = Number(service === 'auth' ? process.env.KODIAK_AUTH_INTERNAL_PORT || 18788 : process.env.KODIAK_BACKEND_INTERNAL_PORT || 18787);
 const targetFile = service === 'auth' ? 'authServer.mjs' : 'server.mjs';
 const serviceLabel = service === 'auth' ? 'Kodiak Auth' : 'Kodiak Backend';
-const corsAllowHeaders = 'Content-Type, X-Kodiak-User-Id, Authorization';
+const corsAllowHeaders = 'Content-Type, X-Kodiak-User-Id, Authorization, Range';
+const corsExposeHeaders = 'Accept-Ranges, Content-Length, Content-Range, Content-Type';
 
 function getCorsOrigin(origin) {
   if (!origin) {
@@ -24,6 +25,7 @@ function writeCorsHeaders(response, origin) {
   response.setHeader('Access-Control-Allow-Origin', getCorsOrigin(origin));
   response.setHeader('Access-Control-Allow-Headers', corsAllowHeaders);
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  response.setHeader('Access-Control-Expose-Headers', corsExposeHeaders);
   response.setHeader('Access-Control-Max-Age', '86400');
   response.setHeader('Vary', 'Origin');
 }
@@ -69,6 +71,7 @@ function proxyToInternalServer(clientRequest, clientResponse) {
         'Access-Control-Allow-Origin': getCorsOrigin(clientRequest.headers.origin),
         'Access-Control-Allow-Headers': corsAllowHeaders,
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Expose-Headers': corsExposeHeaders,
         Vary: 'Origin',
       });
       targetResponse.pipe(clientResponse);
