@@ -1,5 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
+import {
+  loadKodiakMusicLoungeState,
+  setKodiakMusicLoungeVibe,
+  type KodiakMusicLoungeState,
+  voteKodiakMusicLoungeVibe,
+} from '../backend/kodiakApiClient';
 
 interface MusicLoungePanelProps {
   identity: MatrixLoginIdentity;
@@ -97,10 +103,32 @@ function getDefaultVibeId() {
   return MUSIC_VIBES[Math.floor(Date.now() / thirtyMinutes) % MUSIC_VIBES.length]?.id ?? MUSIC_VIBES[0].id;
 }
 
+function getValidVibeId(vibeId: string | undefined): string {
+  if (vibeId && MUSIC_VIBES.some((vibe) => vibe.id === vibeId)) {
+    return vibeId;
+  }
+
+  return getDefaultVibeId();
+}
+
+function formatSyncTime(timestamp: number) {
+  if (!timestamp) {
+    return 'Not synced yet';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(timestamp));
+}
+
 export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
   const [activeVibeId, setActiveVibeId] = useState(getDefaultVibeId);
   const [localVote, setLocalVote] = useState<'up' | 'down' | null>(null);
   const [searchDraft, setSearchDraft] = useState('');
+  const [loungeState, setLoungeState] = useState<KodiakMusicLoungeState | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('Loading shared lounge state...');
 
   const activeVibe = MUSIC_VIBES.find((vibe) => vibe.id === activeVibeId) ?? MUSIC_VIBES[0];
 
@@ -113,6 +141,90 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
 
     return `https://open.spotify.com/search/${encodeURIComponent(query)}`;
   }, [activeVibe.spotifyUrl, searchDraft]);
+
+  function applySharedState(nextState: KodiakMusicLoungeState | null) {
+    if (!nextState) {
+      return;
+    }
+
+    setLoungeState(nextState);
+    setActiveVibeId(getValidVibeId(nextState.selectedVibeId));
+    setLocalVote(nextState.myVote);
+    setStatusMessage('Shared lounge synced.');
+  }
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function syncState() {
+      try {
+        const nextState = await loadKodiakMusicLoungeState(identity);
+
+        if (!isMounted) {
+          return;
+        }
+
+        applySharedState(nextState);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        console.error('[Kodiak Music Lounge] Failed to load shared state.', error);
+        setStatusMessage('Could not sync the shared lounge yet.');
+      }
+    }
+
+    void syncState();
+
+    const intervalId = window.setInterval(() => {
+      void syncState();
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [identity]);
+
+  async function selectSharedVibe(vibeId: string) {
+    setActiveVibeId(vibeId);
+    setLocalVote(null);
+    setIsSyncing(true);
+    setStatusMessage('Updating shared vibe...');
+
+    try {
+      const nextState = await setKodiakMusicLoungeVibe(identity, vibeId);
+      applySharedState(nextState);
+    } catch (error) {
+      console.error('[Kodiak Music Lounge] Failed to set shared vibe.', error);
+      setStatusMessage('Could not update the shared vibe.');
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  async function setSharedVote(vote: 'up' | 'down') {
+    const nextVote = localVote === vote ? null : vote;
+
+    setLocalVote(nextVote);
+    setIsSyncing(true);
+    setStatusMessage('Updating vote...');
+
+    try {
+      const nextState = await voteKodiakMusicLoungeVibe(identity, nextVote);
+      applySharedState(nextState);
+    } catch (error) {
+      console.error('[Kodiak Music Lounge] Failed to vote on shared vibe.', error);
+      setStatusMessage('Could not update your vote.');
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  const voteCounts = loungeState?.voteCounts ?? { up: 0, down: 0 };
+  const selectedBy = loungeState?.selectedByUserId ? getDisplayName(loungeState.selectedByUserId) : 'Kodiak';
+  const selectedAt = formatSyncTime(loungeState?.selectedAt ?? 0);
 
   return (
     <div className="music-lounge-panel">
@@ -127,9 +239,9 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
         </div>
 
         <aside className="music-lounge-now" aria-label="Current lounge vibe">
-          <span>Now selected</span>
+          <span>Shared vibe</span>
           <strong>{activeVibe.title}</strong>
-          <small>{activeVibe.subtitle}</small>
+          <small>Picked by {selectedBy} at {selectedAt}</small>
         </aside>
       </section>
 
@@ -146,6 +258,10 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
                 <span key={tag}>{tag}</span>
               ))}
             </div>
+
+            <p className="music-lounge-sync-status">
+              {isSyncing ? 'Syncing...' : statusMessage}
+            </p>
           </div>
         </div>
 
@@ -156,16 +272,18 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
           <button
             type="button"
             className={localVote === 'up' ? 'music-lounge-vote music-lounge-vote--active' : 'music-lounge-vote'}
-            onClick={() => setLocalVote(localVote === 'up' ? null : 'up')}
+            onClick={() => void setSharedVote('up')}
+            disabled={isSyncing}
           >
-            Like vibe
+            Like vibe ({voteCounts.up})
           </button>
           <button
             type="button"
             className={localVote === 'down' ? 'music-lounge-vote music-lounge-vote--active' : 'music-lounge-vote'}
-            onClick={() => setLocalVote(localVote === 'down' ? null : 'down')}
+            onClick={() => void setSharedVote('down')}
+            disabled={isSyncing}
           >
-            Not it
+            Not it ({voteCounts.down})
           </button>
         </div>
       </section>
@@ -198,10 +316,8 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
             key={vibe.id}
             type="button"
             className={vibe.id === activeVibeId ? 'music-lounge-card music-lounge-card--active' : 'music-lounge-card'}
-            onClick={() => {
-              setActiveVibeId(vibe.id);
-              setLocalVote(null);
-            }}
+            onClick={() => void selectSharedVibe(vibe.id)}
+            disabled={isSyncing}
           >
             <span>{vibe.id === activeVibeId ? 'Selected vibe' : vibe.accent}</span>
             <strong>{vibe.title}</strong>
