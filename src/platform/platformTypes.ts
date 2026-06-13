@@ -10,6 +10,6 @@ export interface KodiakPlatformInfo {
   kind: KodiakPlatformKind;
   runtime: KodiakRuntime;
   isNativeShell: boolean;
-  buildTarget: KodiakBuildTarget;
+  buildTarget?: KodiakBuildTarget;
   desktopOs?: KodiakDesktopOs;
 }
