@@ -188,9 +188,17 @@ if [ -z "`$ELECTRON_DEB_FILE" ] || [ ! -f "`$ELECTRON_DEB_FILE" ]; then
   exit 1
 fi
 
-mkdir -p '$RemoteLinuxDir'
+mkdir -p '$RemoteLinuxDir' '$RemoteRoot/linux'
 cp "`$ELECTRON_DEB_FILE" '$RemoteLinuxDir/$RemoteLinuxDeb'
+cp "`$ELECTRON_DEB_FILE" '$RemoteRoot/linux/$RemoteLinuxDeb'
+if [ ! -f electron-dist/latest-linux.yml ]; then
+  echo "Missing Electron latest-linux.yml for $Version" >&2
+  exit 1
+fi
+cp electron-dist/latest-linux.yml '$RemoteRoot/linux/latest-linux.yml'
 test -f '$RemoteLinuxDir/$RemoteLinuxDeb'
+test -f '$RemoteRoot/linux/$RemoteLinuxDeb'
+test -f '$RemoteRoot/linux/latest-linux.yml'
 "@
 
     $RemoteScript = ($RemoteScript -replace "`r`n", "`n").TrimStart() + "`n"
@@ -307,6 +315,7 @@ done
   Write-Host "$BaseUrl/android/latest.json" -ForegroundColor Cyan
   Write-Host "$BaseUrl/$Version/windows/$RemoteWindowsMsi" -ForegroundColor Cyan
   Write-Host "$BaseUrl/$Version/linux/$RemoteLinuxDeb" -ForegroundColor Cyan
+  Write-Host "$BaseUrl/linux/latest-linux.yml" -ForegroundColor Cyan
   Write-Host "$BaseUrl/$Version/android/$RemoteAndroidApk" -ForegroundColor Cyan
 }
 finally {
