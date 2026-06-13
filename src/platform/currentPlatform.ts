@@ -18,6 +18,15 @@ export interface KodiakPlatformAdapter {
   updater: KodiakUpdaterAdapter;
 }
 
+function openUrlInBrowser(url: string) {
+  if (url.startsWith('mailto:')) {
+    window.location.href = url;
+    return;
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 async function openExternalUrl(url: string, platformInfo: KodiakPlatformInfo) {
   if (platformInfo.runtime === 'tauri-desktop') {
     try {
@@ -29,7 +38,7 @@ async function openExternalUrl(url: string, platformInfo: KodiakPlatformInfo) {
     }
   }
 
-  window.open(url, '_blank', 'noopener,noreferrer');
+  openUrlInBrowser(url);
 }
 
 async function unsupportedUpdaterCheck(): Promise<DesktopUpdateInfo | null> {
