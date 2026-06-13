@@ -29,6 +29,22 @@ function detectDesktopOs(userAgent: string): KodiakDesktopOs {
   return 'unknown';
 }
 
+function desktopOsForBuildTarget(buildTarget: string, userAgent: string): KodiakDesktopOs {
+  if (buildTarget === 'desktop-windows') {
+    return 'windows';
+  }
+
+  if (buildTarget === 'desktop-linux') {
+    return 'linux';
+  }
+
+  if (buildTarget === 'desktop-macos') {
+    return 'macos';
+  }
+
+  return detectDesktopOs(userAgent);
+}
+
 function hasTauriRuntime(runtimeWindow: KodiakWindowRuntime) {
   return Boolean(runtimeWindow.__TAURI_INTERNALS__ || runtimeWindow.__TAURI_IPC__ || runtimeWindow.__TAURI__);
 }
@@ -44,6 +60,34 @@ export function detectPlatformInfo(): KodiakPlatformInfo {
   const userAgent = navigator.userAgent;
   const normalizedUserAgent = userAgent.toLowerCase();
   const buildTarget = readKodiakBuildTarget();
+
+  if (buildTarget === 'web') {
+    return {
+      kind: 'web',
+      runtime: 'browser',
+      isNativeShell: false,
+      buildTarget,
+    };
+  }
+
+  if (buildTarget === 'android') {
+    return {
+      kind: 'android',
+      runtime: 'capacitor-android',
+      isNativeShell: true,
+      buildTarget,
+    };
+  }
+
+  if (buildTarget.startsWith('desktop-')) {
+    return {
+      kind: 'desktop',
+      runtime: 'tauri-desktop',
+      isNativeShell: true,
+      buildTarget,
+      desktopOs: desktopOsForBuildTarget(buildTarget, userAgent),
+    };
+  }
 
   if (hasTauriRuntime(runtimeWindow)) {
     return {
