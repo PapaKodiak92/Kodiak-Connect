@@ -16,9 +16,11 @@ function createEmptyCallStream() {
 export class KodiakNativeLinuxRtcCallPeer implements KodiakCallPeer {
   private readonly callId = crypto.randomUUID();
   private readonly ready: Promise<void>;
+  private readonly pendingIceCandidates: RTCIceCandidateInit[] = [];
   private unlistenIceCandidate?: UnlistenFn;
   private isClosed = false;
   private isMuted = false;
+  private isNativeSessionReady = false;
 
   constructor(private readonly options: KodiakVoiceCallPeerOptions) {
     this.ready = this.listenForNativeIceCandidates();
@@ -29,20 +31,38 @@ export class KodiakNativeLinuxRtcCallPeer implements KodiakCallPeer {
   async createOffer() {
     await this.ready;
 
-    return await invoke<string>('kodiak_linux_rtc_create_offer', {
+    const offerSdp = await invoke<string>('kodiak_linux_rtc_create_offer', {
       callId: this.callId,
       callKind: this.options.callKind,
     });
+
+    this.isNativeSessionReady = true;
+    await this.flushPendingIceCandidates();
+
+    if (this.isMuted) {
+      this.setMuted(true);
+    }
+
+    return offerSdp;
   }
 
   async createAnswer(offerSdp: string) {
     await this.ready;
 
-    return await invoke<string>('kodiak_linux_rtc_create_answer', {
+    const answerSdp = await invoke<string>('kodiak_linux_rtc_create_answer', {
       callId: this.callId,
       callKind: this.options.callKind,
       offerSdp,
     });
+
+    this.isNativeSessionReady = true;
+    await this.flushPendingIceCandidates();
+
+    if (this.isMuted) {
+      this.setMuted(true);
+    }
+
+    return answerSdp;
   }
 
   async applyAnswer(answerSdp: string) {
@@ -63,13 +83,12 @@ export class KodiakNativeLinuxRtcCallPeer implements KodiakCallPeer {
       return;
     }
 
-    await invoke('kodiak_linux_rtc_add_ice_candidate', {
-      callId: this.callId,
-      candidate: {
-        candidate: candidate.candidate,
-        sdpMLineIndex: candidate.sdpMLineIndex ?? 0,
-      },
-    });
+    if (!this.isNativeSessionReady) {
+      this.pendingIceCandidates.push(candidate);
+      return;
+    }
+
+    await this.sendNativeIceCandidate(candidate);
   }
 
   async setCameraEnabled(_isEnabled: boolean) {
@@ -82,6 +101,10 @@ export class KodiakNativeLinuxRtcCallPeer implements KodiakCallPeer {
 
   setMuted(isMuted: boolean) {
     this.isMuted = isMuted;
+
+    if (!this.isNativeSessionReady) {
+      return;
+    }
 
     void invoke('kodiak_linux_rtc_set_muted', {
       callId: this.callId,
@@ -97,6 +120,7 @@ export class KodiakNativeLinuxRtcCallPeer implements KodiakCallPeer {
     }
 
     this.isClosed = true;
+    this.pendingIceCandidates.length = 0;
     this.unlistenIceCandidate?.();
 
     void invoke('kodiak_linux_rtc_close', {
@@ -119,5 +143,27 @@ export class KodiakNativeLinuxRtcCallPeer implements KodiakCallPeer {
         sdpMLineIndex: event.payload.sdp_m_line_index,
       });
     });
+  }
+
+  private async sendNativeIceCandidate(candidate: RTCIceCandidateInit) {
+    await invoke('kodiak_linux_rtc_add_ice_candidate', {
+      callId: this.callId,
+      candidate: {
+        candidate: candidate.candidate,
+        sdpMLineIndex: candidate.sdpMLineIndex ?? 0,
+      },
+    });
+  }
+
+  private async flushPendingIceCandidates() {
+    const queuedCandidates = this.pendingIceCandidates.splice(0);
+
+    for (const candidate of queuedCandidates) {
+      if (this.isClosed) {
+        return;
+      }
+
+      await this.sendNativeIceCandidate(candidate);
+    }
   }
 }
