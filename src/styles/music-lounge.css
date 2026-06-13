@@ -438,3 +438,13 @@
     text-align: center;
   }
 }
+
+.music-lounge-spotify__actions button:disabled,
+.music-lounge-now-playing__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.music-lounge-spotify small + small {
+  margin-top: 0.35rem;
+}

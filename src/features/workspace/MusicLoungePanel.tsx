@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { MatrixLoginIdentity } from '../auth/matrixLoginService';
 import {
+  createKodiakSpotifyPlaybackSession,
+  getSpotifyTrackUriFromUrl,
+  isSpotifyTrackUrl,
+  startKodiakSpotifyTrack,
+  type KodiakSpotifyPlaybackSession,
+} from './spotifyWebPlaybackService';
+import {
   addKodiakMusicLoungeQueueTrack,
   clearKodiakMusicLoungeNowPlaying,
   disconnectKodiakSpotify,
@@ -140,7 +147,11 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
   const [queueUrlDraft, setQueueUrlDraft] = useState('');
   const [loungeState, setLoungeState] = useState<KodiakMusicLoungeState | null>(null);
   const [spotifyStatus, setSpotifyStatus] = useState<KodiakSpotifyStatus | null>(null);
+  const [spotifyPlaybackSession, setSpotifyPlaybackSession] = useState<KodiakSpotifyPlaybackSession | null>(null);
+  const [spotifyPlaybackState, setSpotifyPlaybackState] = useState<Spotify.PlaybackState | null>(null);
+  const [spotifyPlaybackMessage, setSpotifyPlaybackMessage] = useState('Spotify player is not started.');
   const [isSpotifyChecking, setIsSpotifyChecking] = useState(false);
+  const [isSpotifyPlayerStarting, setIsSpotifyPlayerStarting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Loading shared lounge state...');
   const [spotifyMessage, setSpotifyMessage] = useState('Checking Spotify connection...');
@@ -224,6 +235,12 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
     };
   }, [identity]);
   useEffect(() => {
+    return () => {
+      spotifyPlaybackSession?.player.disconnect();
+    };
+  }, [spotifyPlaybackSession]);
+
+  useEffect(() => {
     let isMounted = true;
 
     async function syncState() {
@@ -299,6 +316,82 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
       setIsSpotifyChecking(false);
     }
   }
+  async function ensureSpotifyPlaybackSession() {
+    if (spotifyPlaybackSession?.deviceId) {
+      return spotifyPlaybackSession;
+    }
+
+    if (!spotifyStatus?.connected) {
+      setSpotifyPlaybackMessage('Connect Spotify first.');
+      throw new Error('Spotify is not connected.');
+    }
+
+    if (spotifyStatus.profile?.product !== 'premium') {
+      setSpotifyPlaybackMessage('Spotify Premium is required for in-app playback.');
+      throw new Error('Spotify Premium is required.');
+    }
+
+    setIsSpotifyPlayerStarting(true);
+    setSpotifyPlaybackMessage('Starting Kodiak Connect Lounge player...');
+
+    try {
+      const session = await createKodiakSpotifyPlaybackSession(identity, {
+        onDeviceOffline: () => setSpotifyPlaybackMessage('Spotify player went offline. Start it again.'),
+        onDeviceReady: () => setSpotifyPlaybackMessage('Kodiak Connect Lounge player is ready.'),
+        onError: (message) => setSpotifyPlaybackMessage(message),
+        onPlaybackState: (state) => setSpotifyPlaybackState(state),
+      });
+
+      setSpotifyPlaybackSession(session);
+      return session;
+    } finally {
+      setIsSpotifyPlayerStarting(false);
+    }
+  }
+
+  async function startSpotifyPlayer() {
+    try {
+      await ensureSpotifyPlaybackSession();
+    } catch (error) {
+      console.error('[Kodiak Music Lounge] Failed to start Spotify player.', error);
+    }
+  }
+
+  async function playNowPlayingInKodiak() {
+    const spotifyUri = getSpotifyTrackUriFromUrl(nowPlaying?.url);
+
+    if (!spotifyUri) {
+      setSpotifyPlaybackMessage('Now Playing needs a real Spotify track URL before Kodiak can play it.');
+      return;
+    }
+
+    try {
+      const session = await ensureSpotifyPlaybackSession();
+      setSpotifyPlaybackMessage('Starting Spotify playback...');
+      await startKodiakSpotifyTrack(identity, session.deviceId, spotifyUri);
+      setSpotifyPlaybackMessage('Playing through Kodiak Connect Lounge.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not start Spotify playback.';
+      console.error('[Kodiak Music Lounge] Failed to play Spotify track.', error);
+      setSpotifyPlaybackMessage(message);
+    }
+  }
+
+  async function toggleSpotifyPlayback() {
+    if (!spotifyPlaybackSession) {
+      await startSpotifyPlayer();
+      return;
+    }
+
+    try {
+      await spotifyPlaybackSession.player.togglePlay();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not toggle Spotify playback.';
+      console.error('[Kodiak Music Lounge] Failed to toggle Spotify playback.', error);
+      setSpotifyPlaybackMessage(message);
+    }
+  }
+
   async function selectSharedVibe(vibeId: string) {
     setActiveVibeId(vibeId);
     setLocalVote(null);
@@ -448,6 +541,8 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
   const spotifyName = spotifyStatus?.profile?.displayName || spotifyStatus?.profile?.id || 'Spotify';
   const canModerate = Boolean(loungeState?.canModerate);
   const canClearQueue = canModerate && queue.length > 0;
+  const canPlayNowPlayingInKodiak = Boolean(nowPlaying?.url && isSpotifyTrackUrl(nowPlaying.url));
+  const currentlyPlayingTrack = spotifyPlaybackState?.track_window.current_track;
 
   return (
     <div className="music-lounge-panel">
@@ -480,6 +575,10 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
               : 'Connect Spotify so this lounge can become a real playback room instead of just shared links.'}
           </p>
           <small>{isSpotifyChecking ? 'Checking Spotify...' : spotifyMessage}</small>
+          <small>{isSpotifyPlayerStarting ? 'Starting player...' : spotifyPlaybackMessage}</small>
+          {currentlyPlayingTrack ? (
+            <small>SDK track: {currentlyPlayingTrack.name}</small>
+          ) : null}
         </div>
 
         <div className="music-lounge-spotify__actions">
@@ -499,6 +598,20 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
           <button type="button" onClick={() => void refreshSpotifyConnection()} disabled={isSpotifyChecking}>
             Refresh
           </button>
+          {spotifyConnected ? (
+            <button
+              type="button"
+              onClick={() => void startSpotifyPlayer()}
+              disabled={isSpotifyChecking || isSpotifyPlayerStarting || !spotifyPremium}
+            >
+              {spotifyPlaybackSession ? 'Player ready' : 'Start player'}
+            </button>
+          ) : null}
+          {spotifyPlaybackSession ? (
+            <button type="button" onClick={() => void toggleSpotifyPlayback()}>
+              Toggle play
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -592,6 +705,15 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
               Open track
             </a>
           ) : null}
+          {nowPlaying ? (
+            <button
+              type="button"
+              onClick={() => void playNowPlayingInKodiak()}
+              disabled={isSyncing || !spotifyConnected || !spotifyPremium || !canPlayNowPlayingInKodiak}
+            >
+              Play in Kodiak
+            </button>
+          ) : null}
           {nowPlaying && canModerate ? (
             <button type="button" onClick={() => void clearSharedNowPlaying()} disabled={isSyncing}>
               Clear now playing
@@ -630,7 +752,7 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
           <input
             value={queueUrlDraft}
             onChange={(event) => setQueueUrlDraft(event.target.value)}
-            placeholder="Optional Spotify/YouTube/link URL..."
+            placeholder="Spotify track URL recommended for playback..."
           />
           <button type="submit" disabled={isSyncing || !queueTitleDraft.trim()}>
             Add
