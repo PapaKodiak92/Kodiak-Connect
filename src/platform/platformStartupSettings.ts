@@ -1,9 +1,6 @@
 import { kodiakPlatform } from './currentPlatform';
+import { invokeTauri } from './tauri/tauriCore';
 
-async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<T>(command, args);
-}
 
 export async function getStartMinimizedSetting(): Promise<boolean> {
   if (kodiakPlatform.info.runtime !== 'tauri-desktop') {

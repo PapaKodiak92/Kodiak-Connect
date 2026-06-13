@@ -1,4 +1,5 @@
 import { kodiakPlatform } from './currentPlatform';
+import { invokeTauri } from './tauri/tauriCore';
 
 type BrowserWritableFile = {
   close: () => Promise<void>;
@@ -34,15 +35,13 @@ async function writeBrowserFile(fileHandle: BrowserFileHandle, blob: Blob) {
 }
 
 async function chooseTauriSavePath(suggestedName: string) {
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<string | null>('choose_save_path', { suggestedName });
+  return invokeTauri<string | null>('choose_save_path', { suggestedName });
 }
 
 async function writeTauriFile(savePath: string, blob: Blob) {
-  const { invoke } = await import('@tauri-apps/api/core');
   const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
 
-  await invoke('write_downloaded_file', {
+  await invokeTauri('write_downloaded_file', {
     path: savePath,
     bytes,
   });
