@@ -1,11 +1,9 @@
 import type { MatrixCallKind } from '../matrix/matrixRestClient';
+import type { KodiakVoiceCallPeerOptions } from './kodiakWebRtcCall';
 import {
-  isKodiakWebRtcSupported,
-  KodiakVoiceCallPeer,
-  type KodiakVoiceCallPeerOptions,
-} from './kodiakWebRtcCall';
-import { kodiakPlatform } from '../../platform/currentPlatform';
-import { KodiakNativeLinuxRtcCallPeer } from '../../platform/calls/kodiakNativeLinuxRtcCall';
+  createPlatformCallPeer,
+  shouldUsePlatformNativeCallPeer,
+} from '../../platform/calls/platformCallAdapter';
 
 export interface KodiakCallPeer {
   createOffer(): Promise<string>;
@@ -19,23 +17,11 @@ export interface KodiakCallPeer {
 }
 
 export function shouldUseKodiakNativeLinuxRtcPeer() {
-  return (
-    kodiakPlatform.info.runtime === 'tauri-desktop' &&
-    kodiakPlatform.info.desktopOs === 'linux' &&
-    !isKodiakWebRtcSupported()
-  );
+  return shouldUsePlatformNativeCallPeer();
 }
 
 export function createKodiakCallPeer(options: KodiakVoiceCallPeerOptions): KodiakCallPeer {
-  if (options.callKind === 'voice' && shouldUseKodiakNativeLinuxRtcPeer()) {
-    return new KodiakNativeLinuxRtcCallPeer(options);
-  }
-
-  if (!isKodiakWebRtcSupported()) {
-    throw new Error('Kodiak Connect WebRTC is not available in this app runtime.');
-  }
-
-  return new KodiakVoiceCallPeer(options);
+  return createPlatformCallPeer(options);
 }
 
 export type { MatrixCallKind };
