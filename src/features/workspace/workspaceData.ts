@@ -1,10 +1,10 @@
-﻿import type { WorkspaceSpace } from './workspaceTypes';
+import type { WorkspaceSpace } from './workspaceTypes';
 
 export const officialSpace: WorkspaceSpace = {
   id: 'official-space',
   name: 'Official Space',
   description: 'The official Kodiak Connect starting space for updates, safety, and community direction.',
-  iconSrc: '/kodiak-connect-icon.png',
+  iconSrc: 'kodiak-connect-icon.png',
   sections: [
     {
       id: 'official',
