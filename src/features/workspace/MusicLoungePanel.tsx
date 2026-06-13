@@ -270,6 +270,10 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
     }
   }
 
+  function canRemoveQueueTrack(addedByUserId: string) {
+    return canModerate || addedByUserId === identity.userId;
+  }
+
   async function clearSharedQueue() {
     setIsSyncing(true);
     setStatusMessage('Clearing queue...');
@@ -335,6 +339,8 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
   const selectedAt = formatSyncTime(loungeState?.selectedAt ?? 0);
   const queue = loungeState?.queue ?? [];
   const nowPlaying = loungeState?.nowPlaying ?? null;
+  const canModerate = Boolean(loungeState?.canModerate);
+  const canClearQueue = canModerate && queue.length > 0;
 
   return (
     <div className="music-lounge-panel">
@@ -445,7 +451,7 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
               Open track
             </a>
           ) : null}
-          {nowPlaying ? (
+          {nowPlaying && canModerate ? (
             <button type="button" onClick={() => void clearSharedNowPlaying()} disabled={isSyncing}>
               Clear now playing
             </button>
@@ -461,9 +467,11 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
             <p>Add tracks, playlists, or moods. This is shared for everyone in the lounge.</p>
           </div>
 
-          <button type="button" onClick={() => void clearSharedQueue()} disabled={isSyncing || queue.length === 0}>
-            Clear queue
-          </button>
+          {canModerate ? (
+            <button type="button" onClick={() => void clearSharedQueue()} disabled={isSyncing || !canClearQueue}>
+              Clear queue
+            </button>
+          ) : null}
         </div>
 
         <form
@@ -531,13 +539,15 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
                       Open
                     </a>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void removeSharedQueueTrack(track.id)}
-                    disabled={isSyncing}
-                  >
-                    Remove
-                  </button>
+                  {canRemoveQueueTrack(track.addedByUserId) ? (
+                    <button
+                      type="button"
+                      onClick={() => void removeSharedQueueTrack(track.id)}
+                      disabled={isSyncing}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
               </article>
             ))

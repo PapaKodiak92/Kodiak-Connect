@@ -18,6 +18,14 @@ const PUSH_SUBSCRIPTIONS_FILE = join(DATA_DIR, "push-subscriptions.json");
 const ACTIVE_ROOMS_FILE = join(DATA_DIR, "active-rooms.json");
 const CALL_EVENTS_FILE = join(DATA_DIR, "call-events.json");
 const MUSIC_LOUNGE_FILE = join(DATA_DIR, "music-lounge.json");
+const MUSIC_LOUNGE_DEFAULT_MODERATOR_IDS = ['@papakodiak:kodiak-connect.com'];
+const MUSIC_LOUNGE_MODERATOR_IDS = new Set([
+  ...MUSIC_LOUNGE_DEFAULT_MODERATOR_IDS,
+  ...String(process.env.KODIAK_MUSIC_LOUNGE_MODERATOR_IDS ?? '')
+    .split(',')
+    .map((userId) => userId.trim())
+    .filter(Boolean),
+]);
 const ACTIVE_ROOM_VISIBLE_WINDOW_MS = 20_000;
 const CALL_EVENT_RETENTION_MS = 10 * 60_000;
 
@@ -174,6 +182,10 @@ function getPresenceState(lastSeenAt) {
   return "offline";
 }
 
+function isMusicLoungeModerator(userId) {
+  return isValidMatrixUserId(userId) && MUSIC_LOUNGE_MODERATOR_IDS.has(userId);
+}
+
 function sanitizeMusicVibeId(vibeId) {
   const value = String(vibeId ?? "").trim().toLowerCase();
 
@@ -321,6 +333,7 @@ function getPublicMusicLoungeState(state, userId) {
     queue: (state.queue ?? []).map((track) => getPublicMusicQueueTrack(track, userId)),
     voteCounts: getMusicVoteCounts(state.votes),
     myVote: state.votes[userId] ?? null,
+    canModerate: isMusicLoungeModerator(userId),
   };
 }
 
@@ -453,7 +466,19 @@ async function handleMusicLoungeQueueRemove(request, response, corsHeaders) {
   }
 
   const state = sanitizeMusicLoungeState(await readJsonFile(MUSIC_LOUNGE_FILE, getDefaultMusicLoungeState()));
-  state.queue = (state.queue ?? []).filter((track) => track.id !== trackId);
+  const track = (state.queue ?? []).find((candidate) => candidate.id === trackId);
+
+  if (!track) {
+    sendJson(response, 404, { error: "Track was not found in the queue." }, corsHeaders);
+    return;
+  }
+
+  if (track.addedByUserId !== userId && !isMusicLoungeModerator(userId)) {
+    sendJson(response, 403, { error: "Only moderators can remove other users' tracks." }, corsHeaders);
+    return;
+  }
+
+  state.queue = (state.queue ?? []).filter((candidate) => candidate.id !== trackId);
   state.updatedAt = now();
 
   await writeJsonFile(MUSIC_LOUNGE_FILE, state);
@@ -527,6 +552,11 @@ async function handleMusicLoungeQueueClear(request, response, corsHeaders) {
     return;
   }
 
+  if (!isMusicLoungeModerator(userId)) {
+    sendJson(response, 403, { error: "Only moderators can clear the queue." }, corsHeaders);
+    return;
+  }
+
   const state = sanitizeMusicLoungeState(await readJsonFile(MUSIC_LOUNGE_FILE, getDefaultMusicLoungeState()));
   state.queue = [];
   state.updatedAt = now();
@@ -584,6 +614,11 @@ async function handleMusicLoungeNowPlayingClear(request, response, corsHeaders) 
 
   if (!isValidMatrixUserId(userId)) {
     sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  if (!isMusicLoungeModerator(userId)) {
+    sendJson(response, 403, { error: "Only moderators can clear now playing." }, corsHeaders);
     return;
   }
 

@@ -24,6 +24,7 @@ export interface KodiakMusicLoungeTrack {
 }
 
 export interface KodiakMusicLoungeState {
+  canModerate: boolean;
   myVote: 'up' | 'down' | null;
   nowPlaying: KodiakMusicLoungeTrack | null;
   selectedAt: number;
