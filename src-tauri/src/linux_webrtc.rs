@@ -150,8 +150,11 @@ fn request_webrtc_audio_sink_pad(webrtc: &gst::Element, caps: &gst::Caps) -> Res
     let templates = webrtc.pad_template_list();
 
     for template in &templates {
-        if template.direction() == gst::PadDirection::Sink && template.presence() == gst::PadPresence::Request {
-            if let Some(pad) = webrtc.request_pad(template, None::<&str>, Some(caps)) {
+        if template.direction() == gst::PadDirection::Sink
+            && template.presence() == gst::PadPresence::Request
+            && template.name_template().starts_with("sink_")
+        {
+            if let Some(pad) = webrtc.request_pad(template, None::<&str>, None::<&gst::Caps>) {
                 return Ok(pad);
             }
         }
