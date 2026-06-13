@@ -603,3 +603,16 @@ export async function clearKodiakMusicLoungeNowPlaying(identity: MatrixLoginIden
 
   return data.state ?? null;
 }
+export async function voteKodiakMusicLoungeQueueTrack(
+  identity: MatrixLoginIdentity,
+  trackId: string,
+  vote: 'up' | 'down' | null,
+) {
+  const data = await postKodiak<{ state?: KodiakMusicLoungeState; ok?: boolean }>(
+    identity,
+    '/api/music-lounge/queue/vote',
+    { trackId, vote },
+  );
+
+  return data.state ?? null;
+}

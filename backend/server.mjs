@@ -238,6 +238,7 @@ function sanitizeMusicQueueTrack(track) {
     id,
     title,
     url: sanitizeMusicUrl(track?.url),
+    votes: typeof track?.votes === "object" && track.votes ? track.votes : {},
   };
 }
 function sanitizeMusicNowPlayingTrack(track) {
@@ -280,14 +281,44 @@ function getMusicVoteCounts(votes) {
     { up: 0, down: 0 },
   );
 }
+function getPublicMusicQueueTrack(track, userId) {
+  const voteCounts = getMusicVoteCounts(track.votes);
+
+  return {
+    addedAt: track.addedAt,
+    addedByUserId: track.addedByUserId,
+    id: track.id,
+    myVote: track.votes?.[userId] ?? null,
+    title: track.title,
+    url: track.url,
+    voteCounts,
+  };
+}
+
+function getPublicMusicNowPlayingTrack(track) {
+  if (!track) {
+    return null;
+  }
+
+  return {
+    addedAt: track.addedAt,
+    addedByUserId: track.addedByUserId,
+    id: track.id,
+    playedAt: track.playedAt,
+    playedByUserId: track.playedByUserId,
+    title: track.title,
+    url: track.url,
+  };
+}
+
 function getPublicMusicLoungeState(state, userId) {
   return {
     selectedVibeId: state.selectedVibeId,
     selectedByUserId: state.selectedByUserId,
     selectedAt: state.selectedAt,
     updatedAt: state.updatedAt,
-    nowPlaying: state.nowPlaying ?? null,
-    queue: state.queue ?? [],
+    nowPlaying: getPublicMusicNowPlayingTrack(state.nowPlaying),
+    queue: (state.queue ?? []).map((track) => getPublicMusicQueueTrack(track, userId)),
     voteCounts: getMusicVoteCounts(state.votes),
     myVote: state.votes[userId] ?? null,
   };
@@ -391,6 +422,7 @@ async function handleMusicLoungeQueueAdd(request, response, corsHeaders) {
       id: createMusicQueueTrackId(),
       title,
       url,
+      votes: {},
     },
     ...(state.queue ?? []),
   ].slice(0, 25);
@@ -422,6 +454,60 @@ async function handleMusicLoungeQueueRemove(request, response, corsHeaders) {
 
   const state = sanitizeMusicLoungeState(await readJsonFile(MUSIC_LOUNGE_FILE, getDefaultMusicLoungeState()));
   state.queue = (state.queue ?? []).filter((track) => track.id !== trackId);
+  state.updatedAt = now();
+
+  await writeJsonFile(MUSIC_LOUNGE_FILE, state);
+
+  sendJson(response, 200, {
+    ok: true,
+    state: getPublicMusicLoungeState(state, userId),
+  }, corsHeaders);
+}
+async function handleMusicLoungeQueueVote(request, response, corsHeaders) {
+  const body = await readRequestBody(request);
+  const userId = getCurrentUserId(request, body);
+  const trackId = sanitizeMusicText(body.trackId, 96);
+  const vote = body.vote === "up" || body.vote === "down" ? body.vote : null;
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: "Invalid Matrix userId." }, corsHeaders);
+    return;
+  }
+
+  if (!trackId) {
+    sendJson(response, 400, { error: "Track id is required." }, corsHeaders);
+    return;
+  }
+
+  const state = sanitizeMusicLoungeState(await readJsonFile(MUSIC_LOUNGE_FILE, getDefaultMusicLoungeState()));
+  const track = (state.queue ?? []).find((candidate) => candidate.id === trackId);
+
+  if (!track) {
+    sendJson(response, 404, { error: "Track was not found in the queue." }, corsHeaders);
+    return;
+  }
+
+  track.votes = typeof track.votes === "object" && track.votes ? track.votes : {};
+
+  if (vote) {
+    track.votes[userId] = vote;
+  } else {
+    delete track.votes[userId];
+  }
+
+  state.queue = (state.queue ?? []).sort((a, b) => {
+    const aCounts = getMusicVoteCounts(a.votes);
+    const bCounts = getMusicVoteCounts(b.votes);
+    const aScore = aCounts.up - aCounts.down;
+    const bScore = bCounts.up - bCounts.down;
+
+    if (aScore !== bScore) {
+      return bScore - aScore;
+    }
+
+    return Number(b.addedAt || 0) - Number(a.addedAt || 0);
+  });
+
   state.updatedAt = now();
 
   await writeJsonFile(MUSIC_LOUNGE_FILE, state);
@@ -1928,6 +2014,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/music-lounge/queue/remove") {
       await handleMusicLoungeQueueRemove(request, response, corsHeaders);
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/music-lounge/queue/vote") {
+      await handleMusicLoungeQueueVote(request, response, corsHeaders);
       return;
     }
 

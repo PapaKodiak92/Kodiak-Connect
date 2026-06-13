@@ -9,6 +9,7 @@ import {
   setKodiakMusicLoungeNowPlaying,
   setKodiakMusicLoungeVibe,
   type KodiakMusicLoungeState,
+  voteKodiakMusicLoungeQueueTrack,
   voteKodiakMusicLoungeVibe,
 } from '../backend/kodiakApiClient';
 
@@ -299,6 +300,21 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
     }
   }
 
+  async function voteSharedQueueTrack(trackId: string, vote: 'up' | 'down' | null) {
+    setIsSyncing(true);
+    setStatusMessage('Updating track vote...');
+
+    try {
+      const nextState = await voteKodiakMusicLoungeQueueTrack(identity, trackId, vote);
+      applySharedState(nextState);
+    } catch (error) {
+      console.error('[Kodiak Music Lounge] Failed to vote on queue track.', error);
+      setStatusMessage('Could not update that track vote.');
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
   async function clearSharedNowPlaying() {
     setIsSyncing(true);
     setStatusMessage('Clearing now playing...');
@@ -487,6 +503,22 @@ export function MusicLoungePanel({ identity }: MusicLoungePanelProps) {
                 </div>
 
                 <div className="music-lounge-track__actions">
+                  <button
+                    type="button"
+                    className={track.myVote === 'up' ? 'music-lounge-vote music-lounge-vote--active' : 'music-lounge-vote'}
+                    onClick={() => void voteSharedQueueTrack(track.id, track.myVote === 'up' ? null : 'up')}
+                    disabled={isSyncing}
+                  >
+                    Up ({track.voteCounts?.up ?? 0})
+                  </button>
+                  <button
+                    type="button"
+                    className={track.myVote === 'down' ? 'music-lounge-vote music-lounge-vote--active' : 'music-lounge-vote'}
+                    onClick={() => void voteSharedQueueTrack(track.id, track.myVote === 'down' ? null : 'down')}
+                    disabled={isSyncing}
+                  >
+                    Down ({track.voteCounts?.down ?? 0})
+                  </button>
                   <button
                     type="button"
                     onClick={() => void playSharedQueueTrack(track.id)}
