@@ -67,3 +67,5 @@ artifacts/
 android/app/google-services.json
 /backend/data/push-subscriptions.json
 /backend/data/active-rooms.json
+
+release-artifacts/
