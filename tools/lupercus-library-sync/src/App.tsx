@@ -19,6 +19,16 @@ type SyncTrack = {
   message: string;
 };
 
+type LibraryTrack = {
+  id: string;
+  title: string;
+  artistName?: string;
+  albumTitle?: string;
+  genreNames?: string[];
+  fileSha256?: string;
+  streamPath?: string;
+};
+
 const supportedExtensions = new Set(['.aac', '.flac', '.m4a', '.mp3', '.ogg', '.opus', '.wav']);
 const supportedExtensionLabel = '.aac, .flac, .m4a, .mp3, .ogg, .opus, .wav';
 
@@ -84,7 +94,12 @@ export function App() {
   const [deviceId, setDeviceId] = useState('lupercus-main-pc');
   const [genre, setGenre] = useState('');
   const [tracks, setTracks] = useState<SyncTrack[]>([]);
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [libraryResults, setLibraryResults] = useState<LibraryTrack[]>([]);
+  const [libraryMessage, setLibraryMessage] = useState('Search uploaded Kodiak-Music tracks to review or delete them. Delete requires moderator access.');
+  const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [libraryBusy, setLibraryBusy] = useState(false);
   const [message, setMessage] = useState('Choose files for testing, or choose a folder for a larger library scan. Edit metadata before upload.');
 
   useEffect(() => {
@@ -133,6 +148,48 @@ export function App() {
       setMessage(`Health check failed: ${err(error)}`);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function searchLibrary() {
+    setLibraryBusy(true);
+    setLibraryMessage('Searching hosted Kodiak-Music library...');
+    try {
+      const query = libraryQuery.trim();
+      const response = await fetch(apiUrl(apiBase, `/api/music/library/search?q=${encodeURIComponent(query)}&limit=50&userId=${encodeURIComponent(userId)}`), {
+        headers: { 'X-Kodiak-User-Id': userId },
+      });
+      const data = await response.json() as { tracks?: LibraryTrack[]; error?: string };
+      if (!response.ok) throw new Error(data.error || `Search failed: ${response.status}`);
+      setLibraryResults(data.tracks || []);
+      setLibraryMessage(`Found ${(data.tracks || []).length} hosted track(s).`);
+    } catch (error) {
+      setLibraryMessage(`Library search failed: ${err(error)}`);
+    } finally {
+      setLibraryBusy(false);
+    }
+  }
+
+  async function deleteLibraryTrack(track: LibraryTrack) {
+    const confirmed = window.confirm(`Delete "${track.title}" from the hosted Kodiak-Music library? This removes it from the catalog and deletes the stored audio file.`);
+    if (!confirmed) return;
+
+    setDeletingTrackId(track.id);
+    setLibraryMessage(`Deleting ${track.title}...`);
+    try {
+      const response = await fetch(apiUrl(apiBase, '/api/music/library/delete'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Kodiak-User-Id': userId },
+        body: JSON.stringify({ userId, trackId: track.id }),
+      });
+      const data = await response.json() as { error?: string; fileRemoved?: boolean };
+      if (!response.ok) throw new Error(data.error || `Delete failed: ${response.status}`);
+      setLibraryResults((current) => current.filter((item) => item.id !== track.id));
+      setLibraryMessage(`Deleted ${track.title}${data.fileRemoved ? ' and removed the stored file' : ''}.`);
+    } catch (error) {
+      setLibraryMessage(`Delete failed: ${err(error)}`);
+    } finally {
+      setDeletingTrackId(null);
     }
   }
 
@@ -199,7 +256,7 @@ export function App() {
         patchTrack(track.id, { status: 'failed', message: err(error) });
       }
     }
-    setMessage('Upload pass complete.');
+    setMessage('Upload pass complete. Search the hosted library below to verify uploaded tracks.');
     setBusy(false);
   }
 
@@ -219,22 +276,8 @@ export function App() {
       </section>
 
       <section className="panel actions">
-        <input
-          ref={filePickerRef}
-          style={{ display: 'none' }}
-          type="file"
-          multiple
-          accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*"
-          onChange={(event) => loadFiles(event.target.files)}
-        />
-        <input
-          ref={folderPickerRef}
-          style={{ display: 'none' }}
-          type="file"
-          multiple
-          accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*"
-          onChange={(event) => loadFiles(event.target.files)}
-        />
+        <input ref={filePickerRef} style={{ display: 'none' }} type="file" multiple accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*" onChange={(event) => loadFiles(event.target.files)} />
+        <input ref={folderPickerRef} style={{ display: 'none' }} type="file" multiple accept=".aac,.flac,.m4a,.mp3,.ogg,.opus,.wav,audio/*" onChange={(event) => loadFiles(event.target.files)} />
         <button disabled={busy} onClick={() => filePickerRef.current?.click()}>Choose files</button>
         <button disabled={busy} onClick={() => folderPickerRef.current?.click()}>Choose folder</button>
         <button disabled={busy} onClick={() => void checkAccess()}>Check access</button>
@@ -243,18 +286,35 @@ export function App() {
         <span className="format-note">Supported: {supportedExtensionLabel}</span>
       </section>
 
+      <section className="panel library-manager">
+        <div>
+          <p className="eyebrow">Hosted Kodiak-Music Library</p>
+          <h2>Review uploaded tracks</h2>
+          <span>{libraryMessage}</span>
+        </div>
+        <div className="library-search-row">
+          <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="Search title, artist, album, genre, or leave blank for latest" />
+          <button disabled={libraryBusy} onClick={() => void searchLibrary()}>{libraryBusy ? 'Searching...' : 'Search library'}</button>
+        </div>
+        <div className="library-results">
+          {libraryResults.map((track) => (
+            <article key={track.id} className="library-result-card">
+              <div>
+                <strong>{track.title || 'Untitled track'}</strong>
+                <small>{[track.artistName, track.albumTitle].filter(Boolean).join(' • ') || 'No artist/album set'}</small>
+                <small>{(track.genreNames || []).join(', ') || 'No genres'}{track.fileSha256 ? ` • ${track.fileSha256.slice(0, 12)}...` : ''}</small>
+              </div>
+              <button className="danger-button" disabled={deletingTrackId === track.id} onClick={() => void deleteLibraryTrack(track)}>
+                {deletingTrackId === track.id ? 'Deleting...' : 'Delete'}
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="panel table-panel">
         <table>
-          <thead>
-            <tr>
-              <th>Use</th>
-              <th>File</th>
-              <th>Editable metadata</th>
-              <th>Size</th>
-              <th>Status</th>
-              <th>Message</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Use</th><th>File</th><th>Editable metadata</th><th>Size</th><th>Status</th><th>Message</th></tr></thead>
           <tbody>
             {tracks.map((track) => (
               <tr key={track.id} className={`status-${track.status}`}>
