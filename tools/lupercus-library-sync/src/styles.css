@@ -102,10 +102,36 @@ input {
   font-size: 0.86rem;
 }
 
-.library-manager {
+.library-manager,
+.playback-tester {
   display: grid;
   gap: 1rem;
   padding: 1rem;
+}
+
+.playback-tester {
+  border-color: rgba(77, 184, 255, 0.22);
+  background:
+    radial-gradient(circle at top right, rgba(0, 157, 255, 0.16), transparent 28rem),
+    rgba(15, 18, 24, 0.84);
+}
+
+.playback-box {
+  border: 1px solid rgba(135, 205, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(7, 11, 17, 0.62);
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+}
+
+.playback-box audio {
+  width: 100%;
+}
+
+.playback-box span {
+  color: #9ec9e6;
+  font-size: 0.9rem;
 }
 
 .eyebrow {
@@ -118,11 +144,13 @@ input {
 }
 
 .library-manager h2,
+.playback-tester h2,
 .confirm-modal h2 {
   margin: 0.1rem 0 0.35rem;
 }
 
 .library-manager span,
+.playback-tester span,
 .confirm-modal p,
 .modal-track-summary {
   color: #c9b6a2;
@@ -156,13 +184,20 @@ input {
   margin-top: 0.2rem;
 }
 
+.library-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
 .table-panel {
   overflow: auto;
 }
 
 table {
   border-collapse: collapse;
-  min-width: 1320px;
+  min-width: 1460px;
   width: 100%;
 }
 
