@@ -5,6 +5,7 @@ artifactName: "lupercus-library-sync-${version}-${arch}.${ext}"
 files:
   - dist-lupercus-sync/**
   - electron-lupercus/**
+  - electron-assets-lupercus/**
   - package.json
 directories:
   output: electron-dist-lupercus
@@ -14,6 +15,9 @@ extraMetadata:
   description: Private library sync client for the Kodiak-Music Lupercus catalog.
   main: electron-lupercus/main.cjs
   desktopName: lupercus-library-sync
+extraResources:
+  - from: electron-assets-lupercus
+    to: electron-assets-lupercus
 linux:
   target:
     - deb
@@ -22,5 +26,5 @@ linux:
   icon: electron-assets-lupercus/icons
   executableName: lupercus-library-sync
   syncDesktopName: true
-icon: electron-assets-lupercus/icon.png
+icon: electron-assets-lupercus/icon.svg
 publish: null
