@@ -41,6 +41,36 @@ function getPool() {
   return pool;
 }
 
+function normalizeSearchValue(value, maxLength = 160) {
+  return normalizeMusicText(value, maxLength).toLowerCase();
+}
+
+function normalizeGenreNames(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((genre) => normalizeMusicText(genre, 80))
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function mapLibraryTrack(row) {
+  return {
+    albumTitle: row.album_title ?? '',
+    artistName: row.artist_name ?? '',
+    fileKey: row.file_key ?? '',
+    fileSha256: row.file_sha256 ?? '',
+    genreNames: Array.isArray(row.genre_names) ? row.genre_names : [],
+    id: String(row.id),
+    releaseYear: row.release_year ? Number(row.release_year) : null,
+    streamPath: row.stream_path ?? '',
+    title: row.title ?? '',
+    trackNumber: row.track_number ? Number(row.track_number) : null,
+  };
+}
+
 function isValidMatrixUserId(userId) {
   return typeof userId === 'string' && /^@[a-zA-Z0-9._=-]+:[a-zA-Z0-9.-]+$/.test(userId);
 }
@@ -125,6 +155,65 @@ class KodiakMusicAdminValidationError extends Error {
   }
 }
 
+async function updateKodiakMusicLibraryTrackMetadata({
+  albumTitle = '',
+  artistName = '',
+  genreNames = [],
+  releaseYear = null,
+  title = '',
+  trackId = '',
+  trackNumber = null,
+} = {}) {
+  await ensureKodiakMusicSchema();
+
+  const cleanTrackId = normalizeTrackIdentifier(trackId);
+  const cleanTitle = normalizeMusicText(title, 180);
+  const cleanArtistName = normalizeMusicText(artistName, 120);
+  const cleanAlbumTitle = normalizeMusicText(albumTitle, 180);
+  const cleanGenres = normalizeGenreNames(genreNames);
+  const cleanReleaseYear = releaseYear ? Number(releaseYear) : null;
+  const cleanTrackNumber = trackNumber ? Number(trackNumber) : null;
+
+  if (!cleanTrackId) {
+    throw new KodiakMusicAdminValidationError('A valid trackId is required.');
+  }
+
+  if (!cleanTitle) {
+    throw new KodiakMusicAdminValidationError('Track title is required.');
+  }
+
+  const result = await getPool().query(
+    `UPDATE kodiak_music_tracks
+     SET title = $2,
+         normalized_title = $3,
+         artist_name = $4,
+         normalized_artist_name = $5,
+         album_title = $6,
+         normalized_album_title = $7,
+         genre_names = $8,
+         release_year = $9,
+         track_number = $10,
+         updated_at = now()
+     WHERE id = $1::uuid
+       AND source_kind = 'library'
+     RETURNING id, title, artist_name, album_title, genre_names, source_kind, file_key, file_sha256, stream_path, release_year, track_number`,
+    [
+      cleanTrackId,
+      cleanTitle,
+      normalizeSearchValue(cleanTitle, 180),
+      cleanArtistName,
+      normalizeSearchValue(cleanArtistName, 120),
+      cleanAlbumTitle,
+      normalizeSearchValue(cleanAlbumTitle, 180),
+      cleanGenres,
+      Number.isFinite(cleanReleaseYear) ? cleanReleaseYear : null,
+      Number.isFinite(cleanTrackNumber) ? cleanTrackNumber : null,
+    ],
+  );
+
+  return result.rows[0] ? mapLibraryTrack(result.rows[0]) : null;
+}
+
 async function deleteKodiakMusicLibraryTrack({ fileSha256 = '', trackId = '' } = {}) {
   await ensureKodiakMusicSchema();
 
@@ -205,16 +294,7 @@ async function deleteKodiakMusicLibraryTrack({ fileSha256 = '', trackId = '' } =
     const fileRemoved = await removeLibraryFile(track.file_key);
 
     return {
-      deletedTrack: {
-        albumTitle: track.album_title ?? '',
-        artistName: track.artist_name ?? '',
-        fileKey: track.file_key ?? '',
-        fileSha256: track.file_sha256 ?? '',
-        genreNames: Array.isArray(track.genre_names) ? track.genre_names : [],
-        id: String(track.id),
-        streamPath: track.stream_path ?? '',
-        title: track.title ?? '',
-      },
+      deletedTrack: mapLibraryTrack(track),
       fileRemoved,
       removedQueueItems: queueDeleteResult.rowCount ?? 0,
       unlinkedSongRequests: requestUpdateResult.rowCount ?? 0,
@@ -231,6 +311,41 @@ async function deleteKodiakMusicLibraryTrack({ fileSha256 = '', trackId = '' } =
   } finally {
     client.release();
   }
+}
+
+async function handleUpdateLibraryTrackMetadata(request, response) {
+  const body = await readRequestBody(request);
+  const userId = body.userId || getHeaderValue(request, 'x-kodiak-user-id');
+
+  if (!isValidMatrixUserId(userId)) {
+    sendJson(response, 400, { error: 'Invalid Matrix userId.' });
+    return;
+  }
+
+  if (!isMusicModerator(userId)) {
+    sendJson(response, 403, { error: 'Only Kodiak-Music moderators can update hosted library metadata.' });
+    return;
+  }
+
+  const updatedTrack = await updateKodiakMusicLibraryTrackMetadata({
+    albumTitle: body.albumTitle,
+    artistName: body.artistName,
+    genreNames: body.genreNames,
+    releaseYear: body.releaseYear,
+    title: body.title,
+    trackId: body.trackId,
+    trackNumber: body.trackNumber,
+  });
+
+  if (!updatedTrack) {
+    sendJson(response, 404, { error: 'Kodiak-Music library track was not found.' });
+    return;
+  }
+
+  sendJson(response, 200, {
+    ok: true,
+    updatedTrack,
+  });
 }
 
 async function handleDeleteLibraryTrack(request, response) {
@@ -271,6 +386,11 @@ export async function handleKodiakMusicAdminApiRequest(request, response) {
   }
 
   try {
+    if (request.method === 'POST' && url.pathname === '/api/music/library/metadata') {
+      await handleUpdateLibraryTrackMetadata(request, response);
+      return true;
+    }
+
     if (request.method === 'POST' && url.pathname === '/api/music/library/delete') {
       await handleDeleteLibraryTrack(request, response);
       return true;
